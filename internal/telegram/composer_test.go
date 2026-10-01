@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot/models"
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 func (h *harness) click(action string) {

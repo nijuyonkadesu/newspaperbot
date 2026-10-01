@@ -13,7 +13,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 type Store struct{ db *sql.DB }

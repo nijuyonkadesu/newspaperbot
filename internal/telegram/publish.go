@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 func sendDocument(ctx context.Context, b *bot.Bot, chatID int64, d post.Draft) (*models.Message, error) {

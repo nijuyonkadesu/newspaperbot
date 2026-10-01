@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/go-telegram/bot"
-	"tgblogbot/internal/post"
-	"tgblogbot/internal/store"
+	"newspaperbot/internal/post"
+	"newspaperbot/internal/store"
 )
 
 func (a *App) queuePublication(ctx context.Context, b *bot.Bot, d *post.Draft) error {

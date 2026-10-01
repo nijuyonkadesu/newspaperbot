@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
-	"tgblogbot/internal/post"
-	"tgblogbot/internal/store"
+	"newspaperbot/internal/post"
+	"newspaperbot/internal/store"
 )
 
 // Publish commits first, then fetches/rebases before a normal fast-forward push.

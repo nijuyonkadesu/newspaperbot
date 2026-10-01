@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-telegram/bot/models"
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 func (h *harness) draft(id int64) post.Draft {

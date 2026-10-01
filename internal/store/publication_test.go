@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 func TestPublicationFreezesContentAndSurvivesRestart(t *testing.T) {

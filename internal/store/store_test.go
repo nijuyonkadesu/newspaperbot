@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 func TestRestartPauseAndMultipleDrafts(t *testing.T) {

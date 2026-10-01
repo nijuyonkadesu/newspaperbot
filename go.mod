@@ -1,4 +1,4 @@
-module tgblogbot
+module newspaperbot
 
 go 1.24.2
 

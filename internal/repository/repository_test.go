@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"tgblogbot/internal/post"
-	"tgblogbot/internal/store"
+	"newspaperbot/internal/post"
+	"newspaperbot/internal/store"
 )
 
 func command(t *testing.T, dir, name string, args ...string) string {

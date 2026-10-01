@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
-	"tgblogbot/internal/metadata"
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/metadata"
+	"newspaperbot/internal/post"
 )
 
 type Config struct{ URL, CacheDir, Token string }

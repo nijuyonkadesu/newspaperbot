@@ -8,7 +8,7 @@ import (
 	"errors"
 	"time"
 
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 // Publication owns the frozen content and Git checkpoints. Draft cards can

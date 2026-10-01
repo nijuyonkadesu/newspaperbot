@@ -5,5 +5,5 @@
 *.sqlite*
 /[0-9]*.md
 /.post-*
-/tgblogbot
+/newspaperbot
 /.run/

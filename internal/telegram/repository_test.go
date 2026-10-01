@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"tgblogbot/internal/metadata"
-	"tgblogbot/internal/store"
+	"newspaperbot/internal/metadata"
+	"newspaperbot/internal/store"
 )
 
 type fakeRepository struct {

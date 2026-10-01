@@ -17,9 +17,9 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"tgblogbot/internal/metadata"
-	"tgblogbot/internal/post"
-	"tgblogbot/internal/store"
+	"newspaperbot/internal/metadata"
+	"newspaperbot/internal/post"
+	"newspaperbot/internal/store"
 )
 
 type apiCall struct {

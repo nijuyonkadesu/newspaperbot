@@ -14,11 +14,11 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"tgblogbot/internal/metadata"
-	"tgblogbot/internal/post"
-	"tgblogbot/internal/repository"
-	"tgblogbot/internal/store"
-	"tgblogbot/internal/telegram"
+	"newspaperbot/internal/metadata"
+	"newspaperbot/internal/post"
+	"newspaperbot/internal/repository"
+	"newspaperbot/internal/store"
+	"newspaperbot/internal/telegram"
 )
 
 func main() {
@@ -77,7 +77,8 @@ func run() error {
 		}
 		log.Printf("portfolio connected: %d categories, %d tags, next note %d", len(catalog.Categories), len(catalog.Tags), catalog.LastNumber+1)
 	}
-	b, err := bot.New(token, bot.WithDefaultHandler(app.Handle), bot.WithNotAsyncHandlers(), bot.WithWorkers(1),
+	b, err := bot.New(token, bot.WithServerURL(strings.TrimRight(env("BOT_API_URL", "https://api.telegram.org"), "/")),
+		bot.WithDefaultHandler(app.Handle), bot.WithNotAsyncHandlers(), bot.WithWorkers(1),
 		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateEditedMessage, models.AllowedUpdateCallbackQuery}),
 		bot.WithErrorsHandler(func(err error) { log.Print(strings.ReplaceAll(err.Error(), token, "[redacted]")) }))
 	if err != nil {
@@ -94,6 +95,12 @@ func run() error {
 		log.Printf("restore draft card: %s", strings.ReplaceAll(err.Error(), token, "[redacted]"))
 	}
 	cancelCard()
+	onlineCtx, cancelOnline := context.WithTimeout(ctx, 15*time.Second)
+	_, err = b.SendMessage(onlineCtx, &bot.SendMessageParams{ChatID: owner, Text: "I'm online."})
+	cancelOnline()
+	if err != nil {
+		return fmt.Errorf("send startup notification: %w", err)
+	}
 	log.Print("blog bot started; authoring restricted to the owner's private chat")
 	syncDone := make(chan struct{})
 	go func() { defer close(syncDone); app.RunTaxonomySync(ctx, b) }()

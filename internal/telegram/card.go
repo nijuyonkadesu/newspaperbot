@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"tgblogbot/internal/post"
+	"newspaperbot/internal/post"
 )
 
 const example = "My title\n\nA short summary.\n\n## First section\nWrite the Markdown body here."
