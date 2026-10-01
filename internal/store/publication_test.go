@@ -34,6 +34,13 @@ func TestPublicationFreezesContentAndSurvivesRestart(t *testing.T) {
 	if !d.Locked() || d.GitState != "queued" || d.ChannelID != -1001 || d.PublishedAt.IsZero() {
 		t.Fatal("publication not frozen")
 	}
+	if d.Slot != 0 {
+		t.Fatal("publication retained its draft slot")
+	}
+	reused, err := s.New(ctx, []string{"concept"}, nil)
+	if err != nil || reused.Slot != 1 || reused.ID == d.ID {
+		t.Fatalf("publication did not immediately release its draft slot: %+v, %v", reused, err)
+	}
 	if err := s.Save(ctx, &stale); err == nil {
 		t.Fatal("stale card overwrote queued publication")
 	}

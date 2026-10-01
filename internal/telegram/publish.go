@@ -19,7 +19,10 @@ func sendDocument(ctx context.Context, b *bot.Bot, chatID int64, d post.Draft) (
 	if err != nil {
 		return nil, err
 	}
-	name := fmt.Sprintf("draft-%d.md", d.ID)
+	name := "draft.md"
+	if d.Slot > 0 {
+		name = fmt.Sprintf("draft-%d.md", d.Slot)
+	}
 	if d.Number != 0 {
 		name = fmt.Sprintf("%d.md", d.Number)
 		if d.Portfolio && d.Filename != "" {

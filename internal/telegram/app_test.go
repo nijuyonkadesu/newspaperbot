@@ -312,7 +312,7 @@ func TestRestartResumeEditAndStaleButtons(t *testing.T) {
 	h := newHarness(t)
 	d := h.ready("## First chunk")
 	rootID := h.messageID
-	originalID := d.ID
+	originalNumber := d.Slot
 	h.restart()
 	h.send("Second chunk")
 	if h.active().Content != "## First chunk\n\nSecond chunk" {
@@ -323,7 +323,7 @@ func TestRestartResumeEditAndStaleButtons(t *testing.T) {
 		t.Fatal("edit lost an appended paragraph")
 	}
 	h.send("/newpost")
-	h.send(fmt.Sprintf("/resume %d", originalID))
+	h.send(fmt.Sprintf("/resume %d", originalNumber))
 	d = h.active()
 	stale := keyboard(d, "Options", "options").InlineKeyboard[0][0].CallbackData
 	h.send("Another paragraph")

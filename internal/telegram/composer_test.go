@@ -59,8 +59,8 @@ func TestOneMessageDraftAndOneVisibleCard(t *testing.T) {
 	if len(live[0].Markup.InlineKeyboard) != 2 || len(live[0].Markup.InlineKeyboard[0]) != 3 || len(live[0].Markup.InlineKeyboard[1]) != 2 {
 		t.Fatal("ready controls do not show category and tags directly")
 	}
-	if !strings.Contains(live[0].Text, fmt.Sprintf("<code>#%d</code>", d.ID)) || strings.Contains(live[0].Text, fmt.Sprintf("Draft %d", d.ID)) {
-		t.Fatal("overview did not use a compact inline draft ID")
+	if !strings.Contains(live[0].Text, fmt.Sprintf("<code>#%d</code>", d.Slot)) || strings.Contains(live[0].Text, fmt.Sprintf("Draft %d", d.Slot)) {
+		t.Fatal("overview did not use a compact draft number")
 	}
 	h.click("publish")
 	if !h.active().Exported || len(h.api.live()) != 1 {
@@ -238,8 +238,8 @@ func TestPreviewSurvivesContentUpdatesAndRestartOnTheSameCard(t *testing.T) {
 		if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || live[0].RichMarkdown != previewMarkdown(d) {
 			t.Fatal("content update lost preview or replaced its card")
 		}
-		if !strings.Contains(live[0].RichMarkdown, fmt.Sprintf("`#%d`", d.ID)) || strings.Contains(live[0].RichMarkdown, fmt.Sprintf("Draft %d", d.ID)) {
-			t.Fatal("preview did not use a compact inline draft ID")
+		if !strings.Contains(live[0].RichMarkdown, fmt.Sprintf("`#%d`", d.Slot)) || strings.Contains(live[0].RichMarkdown, fmt.Sprintf("Draft %d", d.Slot)) {
+			t.Fatal("preview did not use a compact draft number")
 		}
 		if h.api.count("sendMessage", false) != 1 || h.api.count("sendRichMessage", false) != 0 || h.api.count("deleteMessage", false) != 0 {
 			t.Fatal("editing content sent or deleted a card")
@@ -371,7 +371,7 @@ func TestLegacyDraftResumeAndPendingRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.restart()
-	h.send(fmt.Sprintf("/resume %d", d.ID))
+	h.send(fmt.Sprintf("/resume %d", d.Slot))
 	if h.active().Content != "Current body" || h.active().Summary != "Summary" || h.active().PendingContent != "Unfinished replacement" || h.active().Step != post.Review {
 		t.Fatal("legacy resume lost existing or pending content")
 	}
@@ -486,24 +486,54 @@ func TestNewPostCancelLoopDoesNotAccumulateDraftsOrCards(t *testing.T) {
 	}
 }
 
-func TestDeleteByIDKeepsOtherDraftActive(t *testing.T) {
+func TestDeleteByNumberKeepsOtherDraftActive(t *testing.T) {
 	h := newHarness(t)
 	old := h.ready("Older body")
 	active := h.ready("Active body")
-	h.send(fmt.Sprintf("/delete %d", old.ID))
+	h.send(fmt.Sprintf("/delete %d", old.Slot))
 	if _, err := h.app.Store.Get(context.Background(), old.ID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatal("delete by ID left the draft")
+		t.Fatal("delete by number left the draft")
 	}
 	if h.active().ID != active.ID || h.active().Content != "Active body" || len(h.api.live()) != 1 {
 		t.Fatal("deleting another draft affected the active draft or added noise")
 	}
-	h.send(fmt.Sprintf("/delete %d", old.ID))
+	h.send(fmt.Sprintf("/delete %d", old.Slot))
 	if len(h.api.live()) != 2 || h.api.count("setMessageReaction", false) != 1 {
 		t.Fatal("missing draft did not provide feedback or incorrectly reacted as success")
 	}
 	h.send("/delete")
 	if len(h.api.live()) != 1 {
 		t.Fatal("delete without ID did not discard the active draft")
+	}
+}
+
+func TestDraftNumbersRecycleWithoutExposingDatabaseIDs(t *testing.T) {
+	h := newHarness(t)
+	first := h.ready("First body")
+	second := h.ready("Second body")
+	third := h.ready("Third body")
+	if first.Slot != 1 || second.Slot != 2 || third.Slot != 3 {
+		t.Fatalf("unexpected initial draft numbers: %d, %d, %d", first.Slot, second.Slot, third.Slot)
+	}
+
+	h.send(fmt.Sprintf("/delete %d", second.Slot))
+	h.send("/newpost")
+	replacement := h.active()
+	if replacement.Slot != 2 || replacement.ID == second.ID {
+		t.Fatalf("draft number was not recycled independently of database ID: %+v", replacement)
+	}
+	card := h.api.messages[replacement.CardID]
+	if !strings.Contains(card.Text, "<code>#2</code>") || strings.Contains(card.Text, fmt.Sprintf("#%d", replacement.ID)) {
+		t.Fatal("new draft card exposed its database ID instead of the recycled number")
+	}
+
+	h.send("/resume 3")
+	if h.active().ID != third.ID {
+		t.Fatal("resume did not resolve the displayed draft number")
+	}
+	h.send("/resume 2")
+	if h.active().ID != replacement.ID {
+		t.Fatal("recycled draft number did not resolve to its new draft")
 	}
 }
 
@@ -515,7 +545,7 @@ func TestDeleteReactionAndFallback(t *testing.T) {
 			h.api.mu.Lock()
 			h.api.reactionRejected = rejectReaction
 			h.api.mu.Unlock()
-			h.send(fmt.Sprintf("/delete %d", d.ID))
+			h.send(fmt.Sprintf("/delete %d", d.Slot))
 			if _, err := h.app.Store.Get(context.Background(), d.ID); !errors.Is(err, sql.ErrNoRows) {
 				t.Fatal("deletion failed")
 			}
@@ -534,7 +564,7 @@ func TestDeleteReactionAndFallback(t *testing.T) {
 			}
 			live := h.api.live()
 			if rejectReaction {
-				if len(live) != 1 || live[0].Text != fmt.Sprintf("Draft %d deleted.", d.ID) {
+				if len(live) != 1 || live[0].Text != fmt.Sprintf("Draft %d deleted.", d.Slot) {
 					t.Fatal("rejected reaction did not fall back to a truthful confirmation")
 				}
 			} else if len(live) != 0 {
@@ -557,10 +587,11 @@ func TestDeleteDoesNotRemovePublicationRecovery(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
 	h.app.WriteFile = func(string, []byte) error { return fmt.Errorf("disk full") }
+	draftNumber := h.active().Slot
 	h.send("/publish")
 	reserved := h.active()
 	h.send("/cancel")
-	h.send(fmt.Sprintf("/delete %d", reserved.ID))
+	h.send(fmt.Sprintf("/delete %d", draftNumber))
 	if h.active().Number != reserved.Number || h.active().Filename != reserved.Filename {
 		t.Fatal("delete discarded a reserved publication's recovery state")
 	}
@@ -570,7 +601,7 @@ func TestDeletedDraftStaleButtonsAndUnauthorizedDeletes(t *testing.T) {
 	h := newHarness(t)
 	d := h.ready("Body")
 	stale := keyboard(d, "Publish", "publish").InlineKeyboard[0][0].CallbackData
-	h.app.Handle(context.Background(), h.bot, &models.Update{Message: &models.Message{From: &models.User{ID: 99}, Chat: models.Chat{ID: 42, Type: models.ChatTypePrivate}, Text: fmt.Sprintf("/delete %d", d.ID)}})
+	h.app.Handle(context.Background(), h.bot, &models.Update{Message: &models.Message{From: &models.User{ID: 99}, Chat: models.Chat{ID: 42, Type: models.ChatTypePrivate}, Text: fmt.Sprintf("/delete %d", d.Slot)}})
 	if h.active().ID != d.ID {
 		t.Fatal("another user could delete the owner's draft")
 	}
@@ -596,7 +627,7 @@ func TestCancelWhenTelegramRefusesCardDeletion(t *testing.T) {
 		t.Fatal("Telegram cleanup failure prevented draft deletion")
 	}
 	live := h.api.live()
-	if len(live) != 1 || live[0].Text != fmt.Sprintf("Draft %d deleted.", d.ID) || len(live[0].Markup.InlineKeyboard) != 0 {
+	if len(live) != 1 || live[0].Text != fmt.Sprintf("Draft %d deleted.", d.Slot) || len(live[0].Markup.InlineKeyboard) != 0 {
 		t.Fatal("undeletable card still showed draft content or controls")
 	}
 }

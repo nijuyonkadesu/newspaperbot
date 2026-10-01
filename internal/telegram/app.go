@@ -57,14 +57,14 @@ The bot keeps one current card. Publish saves Markdown and posts to your channel
 /taxonomy — copyable categories and tags (pin the list)
 Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
 
-/drafts · /resume <id> — saved drafts
+/drafts · /resume <number> — saved drafts
 /replace — replace the whole post in one message
 /undo — remove the last body addition
 /preview — rendered preview on the same card
 /download — download the Markdown file
 /publish — publish the active draft
 /cancel — delete the active unfinished draft
-/delete <id> — delete a saved draft (/delete uses the active draft)
+/delete <number> — delete a saved draft (/delete uses the active draft)
 /setchannel <@name or ID> · /unsetchannel
 /help — show this help
 
@@ -131,9 +131,9 @@ func (a *App) errorDraft(ctx context.Context, update *models.Update) (post.Draft
 				return post.Draft{}, sql.ErrNoRows
 			case "/resume":
 				if len(fields) == 2 {
-					id, err := strconv.ParseInt(fields[1], 10, 64)
+					slot, err := strconv.ParseInt(fields[1], 10, 64)
 					if err == nil {
-						return a.Store.Get(ctx, id)
+						return a.Store.GetBySlot(ctx, slot)
 					}
 				}
 				return post.Draft{}, sql.ErrNoRows
@@ -213,17 +213,25 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			return a.render(ctx, b, &d)
 		case "/cancel", "/delete":
 			if len(fields) > 2 || command == "/cancel" && len(fields) != 1 {
-				return a.reply(ctx, b, "Use /cancel for the active draft or /delete <draft ID>.", nil)
+				return a.reply(ctx, b, "Use /cancel for the active draft or /delete <draft number>.", nil)
 			}
 			id, err := a.Store.Setting(ctx, "active")
 			if err != nil {
 				return err
 			}
 			if len(fields) == 2 {
-				id, err = strconv.ParseInt(fields[1], 10, 64)
-				if err != nil || id <= 0 {
-					return a.reply(ctx, b, "Use a positive draft ID from /drafts.", nil)
+				slot, parseErr := strconv.ParseInt(fields[1], 10, 64)
+				if parseErr != nil || slot <= 0 {
+					return a.reply(ctx, b, "Use a positive draft number from /drafts.", nil)
 				}
+				d, loadErr := a.Store.GetBySlot(ctx, slot)
+				if errors.Is(loadErr, sql.ErrNoRows) {
+					return a.reply(ctx, b, fmt.Sprintf("Draft %d does not exist. Use /drafts to see saved drafts.", slot), nil)
+				}
+				if loadErr != nil {
+					return loadErr
+				}
+				id = d.ID
 			} else if m.ReplyToMessage != nil {
 				d, err := a.target(ctx, b, m)
 				if err != nil || d.ID == 0 {
@@ -233,7 +241,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			}
 			if id == 0 {
 				if command == "/delete" {
-					return a.reply(ctx, b, "No active draft. Use /delete <id> from /drafts.", nil)
+					return a.reply(ctx, b, "No active draft. Use /delete <number> from /drafts.", nil)
 				}
 				return nil
 			}
@@ -242,20 +250,20 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			return a.list(ctx, b)
 		case "/resume":
 			if len(fields) != 2 {
-				return a.reply(ctx, b, "Use /resume <draft ID> from /drafts.", nil)
+				return a.reply(ctx, b, "Use /resume <draft number> from /drafts.", nil)
 			}
-			id, err := strconv.ParseInt(fields[1], 10, 64)
-			if err != nil || id <= 0 {
-				return a.reply(ctx, b, "Use a positive draft ID from /drafts.", nil)
+			slot, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil || slot <= 0 {
+				return a.reply(ctx, b, "Use a positive draft number from /drafts.", nil)
 			}
-			d, err := a.Store.Get(ctx, id)
+			d, err := a.Store.GetBySlot(ctx, slot)
 			if errors.Is(err, sql.ErrNoRows) {
 				return a.reply(ctx, b, "That draft does not exist.", nil)
 			}
 			if err != nil {
 				return err
 			}
-			if err := a.Store.SetSetting(ctx, "active", id); err != nil {
+			if err := a.Store.SetSetting(ctx, "active", d.ID); err != nil {
 				return err
 			}
 			d.ResetView()
@@ -374,13 +382,13 @@ func (a *App) target(ctx context.Context, b *bot.Bot, m *models.Message) (post.D
 	if m.ReplyToMessage != nil {
 		d, err = a.Store.FromMessage(ctx, m.ReplyToMessage.ID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return post.Draft{}, a.reply(ctx, b, "That message is no longer linked to a draft. Reply to its current card or use /resume <id>.", nil)
+			return post.Draft{}, a.reply(ctx, b, "That message is no longer linked to a draft. Reply to its current card or use /resume <number>.", nil)
 		}
 	} else {
 		d, err = a.Store.Active(ctx)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		return post.Draft{}, a.reply(ctx, b, "Use /newpost or /resume <id> first.", nil)
+		return post.Draft{}, a.reply(ctx, b, "Use /newpost or /resume <number> first.", nil)
 	}
 	return d, err
 }
@@ -505,7 +513,7 @@ func (a *App) discard(ctx context.Context, b *bot.Bot, id int64, commandMessageI
 	d, err := a.Store.Delete(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		if commandMessageID != 0 {
-			return a.reply(ctx, b, fmt.Sprintf("Draft %d does not exist. Use /drafts to see saved drafts.", id), nil)
+			return a.reply(ctx, b, "That draft no longer exists. Use /drafts to see saved drafts.", nil)
 		}
 		return nil
 	}
@@ -518,7 +526,7 @@ func (a *App) discard(ctx context.Context, b *bot.Bot, id int64, commandMessageI
 	if d.CardID != 0 {
 		if !a.deleteCard(ctx, b, d.CardID) {
 			// An expired Telegram card may remain even though the draft is gone.
-			_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: a.OwnerID, MessageID: d.CardID, Text: fmt.Sprintf("Draft %d deleted.", d.ID), ReplyMarkup: emptyKeyboard()})
+			_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: a.OwnerID, MessageID: d.CardID, Text: fmt.Sprintf("Draft %d deleted.", d.Slot), ReplyMarkup: emptyKeyboard()})
 			if err != nil {
 				a.logError(b, "deleted draft card", err)
 			}
@@ -535,7 +543,7 @@ func (a *App) discard(ctx context.Context, b *bot.Bot, id int64, commandMessageI
 			if err != nil {
 				a.logError(b, "delete reaction", err)
 			}
-			if err := a.reply(ctx, b, fmt.Sprintf("Draft %d deleted.", id), nil); err != nil {
+			if err := a.reply(ctx, b, fmt.Sprintf("Draft %d deleted.", d.Slot), nil); err != nil {
 				a.logError(b, "delete confirmation", err)
 			}
 		}
@@ -556,19 +564,13 @@ func (a *App) list(ctx context.Context, b *bot.Bot) error {
 	if err != nil {
 		return err
 	}
-	lines := []string{"Saved drafts · /resume <id>"}
+	lines := []string{"Saved drafts · /resume <number>"}
 	for _, d := range drafts {
 		title := clip(d.Title, 55)
 		if title == "" {
 			title = "Untitled"
 		}
-		status := "draft"
-		if d.Number != 0 {
-			status = fmt.Sprintf("post %d", d.Number)
-		} else if d.GitOperation != "" {
-			status = "publishing · " + d.GitState
-		}
-		lines = append(lines, fmt.Sprintf("%d · %s · %s", d.ID, title, status))
+		lines = append(lines, fmt.Sprintf("%d · %s", d.Slot, title))
 	}
 	if len(drafts) == 0 {
 		lines = []string{"No drafts yet. Use /newpost."}

@@ -50,7 +50,10 @@ func (d Draft) PortfolioMarkdown() ([]byte, error) {
 		slug = Slug(d.Title)
 	}
 	if slug == "" {
-		slug = fmt.Sprintf("note-%d", d.ID)
+		slug = "note"
+		if d.Number > 0 {
+			slug = fmt.Sprintf("note-%d", d.Number)
+		}
 	}
 	date := d.PublishedAt
 	if date.IsZero() {

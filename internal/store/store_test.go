@@ -3,13 +3,112 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"newspaperbot/internal/post"
 )
+
+func TestDraftSlotsReuseGapsAndResetWhileArticleNumbersStayIndependent(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := Open(filepath.Join(dir, "drafts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	drafts := make([]post.Draft, 3)
+	for i := range drafts {
+		drafts[i], err = s.New(ctx, []string{"development"}, nil)
+		if err != nil || drafts[i].Slot != int64(i+1) {
+			t.Fatalf("draft %d got slot %d: %v", i, drafts[i].Slot, err)
+		}
+	}
+	deletedID := drafts[1].ID
+	if _, err := s.Delete(ctx, deletedID); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := s.New(ctx, []string{"development"}, nil)
+	if err != nil || replacement.Slot != 2 || replacement.ID == deletedID {
+		t.Fatalf("gap was not reused independently of the row ID: %+v, %v", replacement, err)
+	}
+
+	published := drafts[2]
+	published.Title, published.Summary, published.Content = "Title", "Summary", "Body"
+	if err := s.Save(ctx, &published); err != nil {
+		t.Fatal(err)
+	}
+	published, err = s.Reserve(ctx, published.ID, 40, 0, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Slot != 0 || published.Number != 41 || published.PublishedAt.IsZero() {
+		t.Fatalf("publish mixed draft slot and article identity: %+v", published)
+	}
+	next, err := s.New(ctx, []string{"development"}, nil)
+	if err != nil || next.Slot != 3 {
+		t.Fatalf("published slot was not released: %+v, %v", next, err)
+	}
+
+	for _, d := range []post.Draft{drafts[0], replacement, next} {
+		if _, err := s.Delete(ctx, d.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reset, err := s.New(ctx, []string{"development"}, nil)
+	if err != nil || reset.Slot != 1 || reset.ID <= next.ID {
+		t.Fatalf("empty draft list did not restart at slot 1: %+v, %v", reset, err)
+	}
+}
+
+func TestExistingDatabaseReceivesDraftSlots(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL, number INTEGER UNIQUE);
+		CREATE TABLE settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+		CREATE TABLE publications (operation TEXT PRIMARY KEY, draft_id INTEGER NOT NULL UNIQUE, state TEXT NOT NULL, data TEXT NOT NULL);`); err != nil {
+		t.Fatal(err)
+	}
+	for _, draft := range []post.Draft{
+		{Title: "First", UpdatedAt: time.Now().UTC()},
+		{Title: "Published", Number: 77, UpdatedAt: time.Now().UTC()},
+		{Title: "Second", UpdatedAt: time.Now().UTC()},
+	} {
+		data, err := json.Marshal(draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec("INSERT INTO drafts(data,number) VALUES (?,NULLIF(?,0))", data, draft.Number); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	drafts, err := s.List(ctx)
+	if err != nil || len(drafts) != 2 || drafts[0].Slot != 1 || drafts[1].Slot != 2 || drafts[0].Title != "First" || drafts[1].Title != "Second" {
+		t.Fatalf("legacy drafts were not assigned compact slots: %+v, %v", drafts, err)
+	}
+	published, err := s.Get(ctx, 2)
+	if err != nil || published.Slot != 0 || published.Number != 77 {
+		t.Fatalf("published legacy row received a draft slot: %+v, %v", published, err)
+	}
+}
 
 func TestRestartPauseAndMultipleDrafts(t *testing.T) {
 	ctx := context.Background()

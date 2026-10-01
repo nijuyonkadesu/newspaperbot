@@ -70,11 +70,11 @@ Useful commands while writing:
 
 - `/taxonomy` — get a copyable list of categories and tags. Pin it yourself;
   the same message updates when the available names change.
-- `/drafts` · `/resume <id>` — list saved drafts and select one.
+- `/drafts` · `/resume <number>` — list saved drafts and select one.
 - `/preview` · `/download` — preview the active draft or get its Markdown file.
 - `/replace` · `/undo` — replace the whole post or remove the last body addition.
 - `/cancel` — delete the entire active unfinished draft and remove its card.
-- `/delete <id>` — delete a specific unfinished draft; `/delete` uses the active
+- `/delete <number>` — delete a specific unfinished draft; `/delete` uses the active
   draft. Successful deletion gets a 👍 reaction or a brief confirmation.
 - `/setchannel @channel` — set or change the destination. Add the bot as an
   administrator with permission to post, and be a member yourself. Changes apply

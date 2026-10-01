@@ -29,7 +29,7 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 		return post.Draft{}, err
 	}
 	defer tx.Rollback()
-	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,data FROM drafts WHERE id=?", id))
+	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", id))
 	if err != nil {
 		return d, err
 	}
@@ -52,6 +52,7 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 			return d, err
 		}
 		d.GitOperation = hex.EncodeToString(random[:])
+		d.Slot = 0
 		d.PublishedAt = time.Now().UTC()
 		d.Portfolio, d.ChannelID = true, channel
 		if channel != 0 {
@@ -72,7 +73,7 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 	if err != nil {
 		return d, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET data=? WHERE id=?", string(data), id); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET slot=NULL,data=? WHERE id=?", string(data), id); err != nil {
 		return d, err
 	}
 	return d, tx.Commit()
@@ -93,7 +94,7 @@ func (s *Store) FailPublication(ctx context.Context, job *Publication) (post.Dra
 		return post.Draft{}, err
 	}
 	defer tx.Rollback()
-	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,data FROM drafts WHERE id=?", job.Draft.ID))
+	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", job.Draft.ID))
 	if err != nil {
 		return d, err
 	}
@@ -151,7 +152,7 @@ func (s *Store) FinishPublication(ctx context.Context, job *Publication) (post.D
 		return post.Draft{}, err
 	}
 	defer tx.Rollback()
-	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,data FROM drafts WHERE id=?", job.Draft.ID))
+	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", job.Draft.ID))
 	if err != nil {
 		return d, err
 	}

@@ -60,7 +60,7 @@ func previewMarkdown(d post.Draft) string {
 		tags = "none"
 	}
 	escape := func(text string) string { return bot.EscapeMarkdown(html.EscapeString(text)) }
-	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.ID, escape(d.CategoryLabel()), escape(tags))
+	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.Slot, escape(d.CategoryLabel()), escape(tags))
 }
 
 func overview(d post.Draft) string {
@@ -68,9 +68,13 @@ func overview(d post.Draft) string {
 	if tags == "" {
 		tags = "no tags"
 	}
-	text := fmt.Sprintf("<b>%s</b>\n%s\n\n<blockquote>%s</blockquote>\n\n<code>#%d</code> <i>· %s · %s</i>",
-		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(d.Content, 650)),
-		d.ID, html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
+	text := fmt.Sprintf("<b>%s</b>\n%s\n\n<blockquote>%s</blockquote>",
+		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(d.Content, 650)))
+	if d.Slot > 0 {
+		text += fmt.Sprintf("\n\n<code>#%d</code> <i>· %s · %s</i>", d.Slot, html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
+	} else {
+		text += fmt.Sprintf("\n\n<i>%s · %s</i>", html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
+	}
 	return text
 }
 
@@ -115,7 +119,7 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 			tags = "none"
 		}
 		text = fmt.Sprintf("<code>#%d</code>\nSend title, summary, and Markdown body in <b>one message</b>:\n\n<pre>%s</pre>\n\n<i>Edit your message to correct it. Further messages append to the body. Category: %s · tags: %s.</i>",
-			d.ID, html.EscapeString(clip(source, 1100)), html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
+			d.Slot, html.EscapeString(clip(source, 1100)), html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 		markup = keyboard(d, "Cancel draft", "cancel")
 		if d.View == "replace" {
 			text += "\nYour current post stays saved until a valid replacement arrives."

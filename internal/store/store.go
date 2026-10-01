@@ -33,6 +33,7 @@ func Open(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS drafts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		slot INTEGER,
 		data TEXT NOT NULL,
 		number INTEGER UNIQUE
 	);
@@ -44,6 +45,10 @@ func Open(path string) (*Store, error) {
 		data TEXT NOT NULL
 	);`)
 	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := prepareDraftSlots(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -62,11 +67,15 @@ func (s *Store) New(ctx context.Context, categories, tags []string) (post.Draft,
 		return d, err
 	}
 	defer tx.Rollback()
+	d.Slot, err = availableSlot(tx)
+	if err != nil {
+		return d, err
+	}
 	data, err := json.Marshal(d)
 	if err != nil {
 		return d, err
 	}
-	result, err := tx.ExecContext(ctx, "INSERT INTO drafts(data) VALUES (?)", string(data))
+	result, err := tx.ExecContext(ctx, "INSERT INTO drafts(slot,data) VALUES (?,?)", d.Slot, string(data))
 	if err != nil {
 		return d, err
 	}
@@ -81,22 +90,28 @@ func (s *Store) New(ctx context.Context, categories, tags []string) (post.Draft,
 }
 
 func (s *Store) Get(ctx context.Context, id int64) (post.Draft, error) {
-	return decode(s.db.QueryRowContext(ctx, "SELECT id,data FROM drafts WHERE id=?", id))
+	return decode(s.db.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", id))
 }
 
 func decode(row *sql.Row) (post.Draft, error) {
 	var d post.Draft
 	var data []byte
 	var id int64
-	if err := row.Scan(&id, &data); err != nil {
+	var slot sql.NullInt64
+	if err := row.Scan(&id, &slot, &data); err != nil {
 		return d, err
 	}
 	if err := json.Unmarshal(data, &d); err != nil {
 		return d, err
 	}
 	d.ID = id
+	d.Slot = slot.Int64
 	d.Normalize()
 	return d, nil
+}
+
+func (s *Store) GetBySlot(ctx context.Context, slot int64) (post.Draft, error) {
+	return decode(s.db.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE slot=?", slot))
 }
 
 func (s *Store) Save(ctx context.Context, d *post.Draft) error {
@@ -125,7 +140,7 @@ func (s *Store) SaveCard(ctx context.Context, d *post.Draft) error {
 }
 
 func (s *Store) List(ctx context.Context) ([]post.Draft, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,data FROM drafts ORDER BY id DESC LIMIT 20")
+	rows, err := s.db.QueryContext(ctx, "SELECT id,slot,data FROM drafts WHERE slot IS NOT NULL ORDER BY slot")
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +150,15 @@ func (s *Store) List(ctx context.Context) ([]post.Draft, error) {
 		var d post.Draft
 		var data []byte
 		var id int64
-		if err := rows.Scan(&id, &data); err != nil {
+		var slot int64
+		if err := rows.Scan(&id, &slot, &data); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(data, &d); err != nil {
 			return nil, err
 		}
 		d.ID = id
+		d.Slot = slot
 		d.Normalize()
 		drafts = append(drafts, d)
 	}
@@ -181,7 +198,7 @@ func (s *Store) Delete(ctx context.Context, id int64) (post.Draft, error) {
 		return post.Draft{}, err
 	}
 	defer tx.Rollback()
-	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,data FROM drafts WHERE id=?", id))
+	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", id))
 	if err != nil {
 		return d, err
 	}
@@ -212,7 +229,7 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 		return post.Draft{}, err
 	}
 	defer tx.Rollback()
-	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,data FROM drafts WHERE id=?", id))
+	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", id))
 	if err != nil {
 		return d, err
 	}
@@ -234,6 +251,7 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 		return d, errors.New("post numbers are exhausted")
 	}
 	d.Number = highest + 1
+	d.Slot = 0
 	d.PublishedAt = time.Now().UTC()
 	d.UpdatedAt = d.PublishedAt
 	d.Filename = filepath.Join(dir, strconv.FormatInt(d.Number, 10)+".md")
@@ -245,7 +263,7 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 	if err != nil {
 		return d, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET number=?,data=? WHERE id=?", d.Number, string(data), id); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET slot=NULL,number=?,data=? WHERE id=?", d.Number, string(data), id); err != nil {
 		return d, fmt.Errorf("reserve number: %w", err)
 	}
 	return d, tx.Commit()
@@ -253,8 +271,132 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 
 // FromMessage resolves a source message or current card to its own draft.
 func (s *Store) FromMessage(ctx context.Context, messageID int) (post.Draft, error) {
-	return decode(s.db.QueryRowContext(ctx, `SELECT id,data FROM drafts WHERE EXISTS
+	return decode(s.db.QueryRowContext(ctx, `SELECT id,slot,data FROM drafts WHERE EXISTS
  (SELECT 1 FROM json_each(drafts.data, '$.Sources') WHERE json_extract(value, '$.MessageID') = ?)
  OR json_extract(data, '$.ReplacementSource.MessageID') = ?
  OR json_extract(data, '$.CardID') = ?`, messageID, messageID, messageID))
+}
+
+func prepareDraftSlots(db *sql.DB) error {
+	rows, err := db.Query("PRAGMA table_info(drafts)")
+	if err != nil {
+		return err
+	}
+	hasSlot := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		hasSlot = hasSlot || name == "slot"
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasSlot {
+		if _, err := db.Exec("ALTER TABLE drafts ADD COLUMN slot INTEGER"); err != nil {
+			return err
+		}
+	}
+	if err := assignDraftSlots(db); err != nil {
+		return err
+	}
+	_, err = db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS drafts_slot ON drafts(slot) WHERE slot IS NOT NULL")
+	return err
+}
+
+func assignDraftSlots(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query("SELECT id,slot,data FROM drafts ORDER BY id")
+	if err != nil {
+		return err
+	}
+	type savedDraft struct {
+		id   int64
+		slot sql.NullInt64
+		data []byte
+		post post.Draft
+		keep bool
+	}
+	var saved []savedDraft
+	for rows.Next() {
+		var item savedDraft
+		if err := rows.Scan(&item.id, &item.slot, &item.data); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := json.Unmarshal(item.data, &item.post); err != nil {
+			rows.Close()
+			return err
+		}
+		saved = append(saved, item)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	used := map[int64]bool{}
+	for i := range saved {
+		item := &saved[i]
+		isDraft := item.post.Number == 0 && item.post.GitOperation == ""
+		if isDraft && item.slot.Valid && item.slot.Int64 > 0 && !used[item.slot.Int64] {
+			used[item.slot.Int64] = true
+			item.keep = true
+		}
+	}
+	for i := range saved {
+		item := &saved[i]
+		isDraft := item.post.Number == 0 && item.post.GitOperation == ""
+		if isDraft && item.keep {
+			continue
+		}
+		if !isDraft {
+			if item.slot.Valid {
+				if _, err := tx.Exec("UPDATE drafts SET slot=NULL WHERE id=?", item.id); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		slot := firstFreeSlot(used)
+		used[slot] = true
+		if _, err := tx.Exec("UPDATE drafts SET slot=? WHERE id=?", slot, item.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func availableSlot(tx *sql.Tx) (int64, error) {
+	rows, err := tx.Query("SELECT slot FROM drafts WHERE slot IS NOT NULL ORDER BY slot")
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	used := map[int64]bool{}
+	for rows.Next() {
+		var slot int64
+		if err := rows.Scan(&slot); err != nil {
+			return 0, err
+		}
+		used[slot] = true
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return firstFreeSlot(used), nil
+}
+
+func firstFreeSlot(used map[int64]bool) int64 {
+	for slot := int64(1); ; slot++ {
+		if !used[slot] {
+			return slot
+		}
+	}
 }

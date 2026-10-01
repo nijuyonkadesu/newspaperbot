@@ -26,7 +26,8 @@ type Source struct {
 
 // Draft also holds publication progress so interrupted exports can be recovered.
 type Draft struct {
-	ID                int64
+	ID                int64 // Stable database identity; never shown to the owner.
+	Slot              int64 `json:"-"` // Reusable owner-facing number while this is a draft.
 	ComposerVersion   int
 	CardID            int
 	View              string
