@@ -1,0 +1,9 @@
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite*
+/[0-9]*.md
+/.post-*
+/tgblogbot
+/.run/
