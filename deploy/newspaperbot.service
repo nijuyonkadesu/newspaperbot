@@ -1,0 +1,13 @@
+[Unit]
+Description=Telegram blog bot
+After=network.target telegram-bot-api.service
+
+[Service]
+WorkingDirectory=%h/redacted/tgblogbot
+EnvironmentFile=%h/redacted/tgblogbot/.env
+Environment=PATH=%h/.nvm/versions/node/v22.14.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/redacted/tgblogbot/newspaperbot
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
