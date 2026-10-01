@@ -55,22 +55,22 @@ func draftKeyboard(d post.Draft, preview bool) *models.InlineKeyboardMarkup {
 }
 
 func previewMarkdown(d post.Draft) string {
-	tags := strings.Join(d.Tags, ", ")
+	tags := strings.Join(d.TagLabels(), ", ")
 	if tags == "" {
 		tags = "none"
 	}
 	escape := func(text string) string { return bot.EscapeMarkdown(html.EscapeString(text)) }
-	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.ID, escape(d.Category), escape(tags))
+	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.ID, escape(d.CategoryLabel()), escape(tags))
 }
 
 func overview(d post.Draft) string {
-	tags := strings.Join(d.Tags, ", ")
+	tags := strings.Join(d.TagLabels(), ", ")
 	if tags == "" {
 		tags = "no tags"
 	}
 	text := fmt.Sprintf("<b>%s</b>\n%s\n\n<blockquote>%s</blockquote>\n\n<code>#%d</code> <i>· %s · %s</i>",
 		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(d.Content, 650)),
-		d.ID, html.EscapeString(clip(d.Category, 40)), html.EscapeString(clip(tags, 80)))
+		d.ID, html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 	return text
 }
 
@@ -78,10 +78,20 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 	text := overview(d)
 	markup := draftKeyboard(d, false)
 	switch {
+	case d.GitOperation != "" && d.Number == 0:
+		text += "\n\nPublishing…"
+		markup = keyboard(d, "Download", "download")
+		if d.GitState == "failed" {
+			text = overview(d) + "\n\nPublication paused. Your post is saved."
+			markup = keyboard(d, "Retry publish", "publish", "Download", "download")
+		}
 	case d.Number != 0:
 		status := "Export pending"
 		if d.Exported {
 			status = "Saved · " + html.EscapeString(d.Filename)
+			if d.CommitSHA != "" {
+				status = "Committed to main · <code>" + html.EscapeString(d.Filename) + "</code>"
+			}
 		}
 		text = fmt.Sprintf("<b>Post %d · %s</b>\n%s\n\n%s", d.Number, html.EscapeString(d.Title), html.EscapeString(clip(d.Summary, 400)), status)
 		markup = keyboard(d, "Download", "download")
@@ -100,12 +110,12 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 		if d.View == "replace" && d.Title != "" {
 			source = d.Title + "\n\n" + d.Summary + "\n\n" + d.Content
 		}
-		tags := strings.Join(d.Tags, ", ")
+		tags := strings.Join(d.TagLabels(), ", ")
 		if tags == "" {
 			tags = "none"
 		}
 		text = fmt.Sprintf("<code>#%d</code>\nSend title, summary, and Markdown body in <b>one message</b>:\n\n<pre>%s</pre>\n\n<i>Edit your message to correct it. Further messages append to the body. Category: %s · tags: %s.</i>",
-			d.ID, html.EscapeString(clip(source, 1100)), html.EscapeString(clip(d.Category, 40)), html.EscapeString(clip(tags, 80)))
+			d.ID, html.EscapeString(clip(source, 1100)), html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 		markup = keyboard(d, "Cancel draft", "cancel")
 		if d.View == "replace" {
 			text += "\nYour current post stays saved until a valid replacement arrives."
@@ -177,6 +187,9 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 			addRow(markup, d, "Category", "categories-0", "Tags", "tags-0")
 		}
 	}
+	if !d.Locked() && (d.CategoryLabel() != d.Category || strings.Join(d.TagLabels(), ",") != strings.Join(d.Tags, ",")) {
+		text += "\n<i>* new value · added when published</i>"
+	}
 	if d.Notice != "" {
 		text += "\n\n" + html.EscapeString(clip(d.Notice, 350))
 	}
@@ -195,6 +208,13 @@ func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
 		return err
 	}
 	if active.ID != 0 {
+		if a.Repository != nil && !active.Locked() {
+			a.refreshChoices(ctx, b, &active)
+			active.Portfolio = true
+			if err := a.Store.Save(ctx, &active); err != nil {
+				return err
+			}
+		}
 		if err := a.render(ctx, b, &active); err != nil {
 			return err
 		}
@@ -207,6 +227,14 @@ func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
 	for _, d := range drafts {
 		if d.ID == active.ID || d.CardID == 0 || d.Number != 0 {
 			continue
+		}
+		if a.Repository != nil && !d.Locked() {
+			a.refreshChoices(ctx, b, &d)
+			d.Portfolio = true
+			if err := a.Store.Save(ctx, &d); err != nil {
+				failures = append(failures, err)
+				continue
+			}
 		}
 		if err := a.render(ctx, b, &d); err != nil {
 			failures = append(failures, err)
@@ -232,7 +260,7 @@ func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 	}
 	text, markup := card(*d)
 	var rich *models.InputRichMessage
-	if d.View == "preview" && d.Invalid == "" && !tooLong {
+	if d.View == "preview" && d.Invalid == "" && !tooLong && !d.Locked() {
 		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d)}
 	}
 	err := a.writeCard(ctx, b, d, text, markup, rich)

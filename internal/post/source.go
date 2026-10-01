@@ -45,20 +45,24 @@ func parseSource(text string, categories, availableTags []string) (parsedSource,
 		return p, nil
 	}
 	if !slices.Contains(categories, category) {
-		if explicit {
-			return p, fmt.Errorf("unknown category %q; choose one from /taxonomy", category)
+		if !explicit {
+			return p, nil
 		}
-		return p, nil
+		if err := ValidateCategory(category); err != nil {
+			return p, err
+		}
 	}
 	tags := []string{}
 	if tagsText != "-" {
 		for _, raw := range strings.Split(tagsText, ",") {
 			tag := strings.TrimSpace(raw)
 			if !slices.Contains(availableTags, tag) {
-				if explicit {
-					return p, fmt.Errorf("unknown tag %q; choose tags from /taxonomy or use - for none", tag)
+				if !explicit {
+					return p, nil
 				}
-				return p, nil
+				if !ValidSlug(tag) {
+					return p, fmt.Errorf("tag %q must use lowercase letters, numbers, and single hyphens; use - for none", tag)
+				}
 			}
 			if !slices.Contains(tags, tag) {
 				tags = append(tags, tag)

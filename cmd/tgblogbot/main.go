@@ -16,6 +16,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"tgblogbot/internal/metadata"
 	"tgblogbot/internal/post"
+	"tgblogbot/internal/repository"
 	"tgblogbot/internal/store"
 	"tgblogbot/internal/telegram"
 )
@@ -23,8 +24,10 @@ import (
 func main() {
 	if err := run(); err != nil {
 		message := err.Error()
-		if token := os.Getenv("BOT_TOKEN"); token != "" {
-			message = strings.ReplaceAll(message, token, "[redacted]")
+		for _, key := range []string{"BOT_TOKEN", "PORTFOLIO_GIT_TOKEN"} {
+			if token := os.Getenv(key); token != "" {
+				message = strings.ReplaceAll(message, token, "[redacted]")
+			}
 		}
 		log.Print(message)
 		os.Exit(1)
@@ -56,6 +59,24 @@ func run() error {
 	}}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if os.Getenv("PORTFOLIO_GIT_TOKEN") != "" || os.Getenv("PORTFOLIO_REPO_URL") != "" {
+		setupCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		repo, err := repository.Open(setupCtx, repository.Config{
+			URL:      env("PORTFOLIO_REPO_URL", "https://github.com/nijuyonkadesu/portfolio.git"),
+			CacheDir: env("PORTFOLIO_CACHE_DIR", ".run/portfolio"), Token: os.Getenv("PORTFOLIO_GIT_TOKEN"),
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("portfolio setup: %w", err)
+		}
+		defer repo.Close()
+		app.Repository = repo
+		catalog, err := repo.Catalog(ctx)
+		if err != nil {
+			return err
+		}
+		log.Printf("portfolio connected: %d categories, %d tags, next note %d", len(catalog.Categories), len(catalog.Tags), catalog.LastNumber+1)
+	}
 	b, err := bot.New(token, bot.WithDefaultHandler(app.Handle), bot.WithNotAsyncHandlers(), bot.WithWorkers(1),
 		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateEditedMessage, models.AllowedUpdateCallbackQuery}),
 		bot.WithErrorsHandler(func(err error) { log.Print(strings.ReplaceAll(err.Error(), token, "[redacted]")) }))
@@ -76,9 +97,12 @@ func run() error {
 	log.Print("blog bot started; authoring restricted to the owner's private chat")
 	syncDone := make(chan struct{})
 	go func() { defer close(syncDone); app.RunTaxonomySync(ctx, b) }()
+	publishDone := make(chan struct{})
+	go func() { defer close(publishDone); app.RunPublisher(ctx, b) }()
 	b.Start(ctx)
 	stop()
 	<-syncDone
+	<-publishDone
 	return nil
 }
 

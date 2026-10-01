@@ -19,8 +19,8 @@ func TestTaxonomyFooters(t *testing.T) {
 		{"bare", "Body\npersonal\ngo, sqlite", true, false, "personal", "go,sqlite"},
 		{"none", "Body\ncategory: personal\ntags: -", true, false, "personal", ""},
 		{"crlf", "Body\r\n\r\nCategory: personal\r\nTags: go\r\n", true, false, "personal", "go"},
-		{"unknown category", "Body\nCategory: typo\nTags: go", false, true, "", ""},
-		{"unknown tag", "Body\nCategory: personal\nTags: typo", false, true, "", ""},
+		{"new category", "Body\nCategory: typo\nTags: go", true, false, "typo", "go"},
+		{"new tag", "Body\nCategory: personal\nTags: typo", true, false, "personal", "typo"},
 		{"empty tag", "Body\nCategory: personal\nTags:", false, true, "", ""},
 		{"empty body", "Category: personal\nTags: go", false, true, "", ""},
 		{"bare unknown", "Body\npersonal\nsome words", false, false, "", ""},
@@ -63,7 +63,7 @@ func TestInvalidFooterEditBlocksPublishUntilThatSourceIsFixed(t *testing.T) {
 	if err := d.Replace(Source{MessageID: 1, UpdateID: 1, Text: "Title\n\nSummary\n\nBody"}); err != nil {
 		t.Fatal(err)
 	}
-	d.EditSource(Source{MessageID: 1, UpdateID: 2, Text: "Title\n\nSummary\n\nChanged\nCategory: personal\nTags: typo"})
+	d.EditSource(Source{MessageID: 1, UpdateID: 2, Text: "Title\n\nSummary\n\nChanged\nCategory: personal\nTags: invalid tag"})
 	if d.Invalid == "" || d.Content != "Body" || d.Category != "development" {
 		t.Fatal("invalid native edit overwrote valid content")
 	}

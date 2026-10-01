@@ -18,6 +18,8 @@ type Catalog struct {
 	LastNumber int64
 	Categories []string
 	Tags       []string
+	Groups     map[string][]string
+	Revision   string
 }
 
 type Loader struct {

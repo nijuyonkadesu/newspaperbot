@@ -44,6 +44,7 @@ type Draft struct {
 	Tags             []string
 	Categories       []string
 	AvailableTags    []string
+	TagGroups        map[string][]string
 	Step             string
 	Editing          bool   // Legacy wizard state, retained for decoding old drafts.
 	PendingContent   string // Legacy unfinished body replacement, recoverable in Options.
@@ -58,6 +59,11 @@ type Draft struct {
 	DocumentMode     bool
 	SummaryMessageID int
 	ContentMessageID int
+	GitOperation     string // Nonempty once a repository publication is queued.
+	GitState         string // queued, failed, or done
+	CommitSHA        string
+	Slug             string
+	Portfolio        bool
 }
 
 // Telegram can randomize update IDs after a week without updates. Edit dates
@@ -138,7 +144,7 @@ func ParseSource(text string) (title, summary, content string, err error) {
 }
 
 func (d *Draft) Replace(source Source) error {
-	if d.Number != 0 {
+	if d.Locked() {
 		return errors.New("published posts are locked")
 	}
 	parsed, err := parseSource(source.Text, d.Categories, d.AvailableTags)
@@ -155,7 +161,7 @@ func (d *Draft) Replace(source Source) error {
 }
 
 func (d *Draft) Append(source Source) error {
-	if d.Number != 0 {
+	if d.Locked() {
 		return errors.New("published posts are locked")
 	}
 	if strings.TrimSpace(source.Text) == "" {
@@ -169,7 +175,7 @@ func (d *Draft) Append(source Source) error {
 }
 
 func (d *Draft) EditSource(source Source) bool {
-	if d.Number != 0 {
+	if d.Locked() {
 		return false
 	}
 	for i, old := range d.Sources {
@@ -196,7 +202,7 @@ func (d *Draft) EditSource(source Source) bool {
 }
 
 func (d *Draft) Undo() error {
-	if d.Number != 0 || len(d.Sources) == 0 || d.Sources[len(d.Sources)-1].Full {
+	if d.Locked() || len(d.Sources) == 0 || d.Sources[len(d.Sources)-1].Full {
 		return errors.New("there is no appended message to undo")
 	}
 	d.Sources = d.Sources[:len(d.Sources)-1]
@@ -246,12 +252,17 @@ func (d Draft) Validate() error {
 }
 
 func (d Draft) Empty() bool {
-	return d.Number == 0 && d.Title == "" && d.Summary == "" && d.Content == "" && d.PendingContent == "" && len(d.Sources) == 0 && d.ReplacementSource == nil
+	return !d.Locked() && d.Title == "" && d.Summary == "" && d.Content == "" && d.PendingContent == "" && len(d.Sources) == 0 && d.ReplacementSource == nil
 }
+
+func (d Draft) Locked() bool { return d.Number != 0 || d.GitOperation != "" }
 
 func (d Draft) RichMarkdown() string { return "# " + d.Title + "\n\n" + d.Summary + "\n\n" + d.Content }
 
 func (d Draft) Markdown() ([]byte, error) {
+	if d.Portfolio {
+		return d.PortfolioMarkdown()
+	}
 	var date *time.Time
 	if !d.PublishedAt.IsZero() {
 		date = &d.PublishedAt

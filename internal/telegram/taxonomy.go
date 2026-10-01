@@ -51,7 +51,7 @@ func (a *App) SyncTaxonomy(ctx context.Context, b *bot.Bot, requested bool) erro
 	if err != nil || id == 0 && !requested {
 		return err
 	}
-	c, err := a.Metadata.Taxonomy(ctx)
+	c, err := a.catalog(ctx)
 	if err != nil {
 		return err
 	}
@@ -97,6 +97,11 @@ func (a *App) RunTaxonomySync(ctx context.Context, b *bot.Bot) {
 	sync := func() {
 		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
+		if a.Repository != nil {
+			if err := a.Repository.Refresh(checkCtx); err != nil && ctx.Err() == nil {
+				a.logError(b, "repository refresh", err)
+			}
+		}
 		if err := a.SyncTaxonomy(checkCtx, b, false); err != nil && ctx.Err() == nil {
 			a.logError(b, "taxonomy refresh", err)
 		}
@@ -116,10 +121,12 @@ func (a *App) RunTaxonomySync(ctx context.Context, b *bot.Bot) {
 
 // On a temporary source failure, keep authoring with the last saved catalog.
 func (a *App) refreshChoices(ctx context.Context, b *bot.Bot, d *post.Draft) {
-	c, err := a.Metadata.Taxonomy(ctx)
+	c, err := a.catalog(ctx)
 	if err != nil {
 		a.logError(b, "draft taxonomy", err)
 		return
 	}
 	d.Categories, d.AvailableTags = c.Categories, c.Tags
+	d.TagGroups = c.Groups
+	d.OrderTags()
 }

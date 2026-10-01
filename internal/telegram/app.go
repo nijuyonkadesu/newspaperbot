@@ -19,12 +19,27 @@ import (
 )
 
 type App struct {
+	mu         sync.Mutex
 	taxonomyMu sync.Mutex
 	OwnerID    int64
 	Store      *store.Store
 	Metadata   metadata.Loader
 	OutputDir  string
 	WriteFile  func(string, []byte) error
+	Repository Repository
+}
+
+type Repository interface {
+	Catalog(context.Context) (metadata.Catalog, error)
+	Refresh(context.Context) error
+	Publish(context.Context, *store.Publication, func() error) error
+}
+
+func (a *App) catalog(ctx context.Context) (metadata.Catalog, error) {
+	if a.Repository != nil {
+		return a.Repository.Catalog(ctx)
+	}
+	return a.Metadata.Taxonomy(ctx)
 }
 
 const help = `Write a post in one message:
@@ -60,6 +75,8 @@ draft selected with /newpost, /resume, or Replace post. Replying also targets dr
 Deleting a source message in Telegram does not remove saved content; use /undo.`
 
 func (a *App) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	var err error
 	switch {
 	case update.CallbackQuery != nil:
@@ -170,7 +187,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				return nil
 			}
 			if err != nil || !d.Empty() {
-				catalog, err := a.Metadata.Taxonomy(ctx)
+				catalog, err := a.catalog(ctx)
 				if err != nil {
 					return fmt.Errorf("new draft metadata: %w", err)
 				}
@@ -178,6 +195,8 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				if err != nil {
 					return err
 				}
+				d.Portfolio = a.Repository != nil
+				d.TagGroups = catalog.Groups
 			}
 			d.View, d.Notice = "", ""
 			if len(fields) > 1 {
@@ -285,7 +304,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		return a.notice(ctx, b, &d, "Send the post as text, using Markdown for the body.")
 	}
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: m.Text}
-	if d.Number != 0 {
+	if d.Locked() {
 		return a.notice(ctx, b, &d, "This post is locked. Use /newpost for another draft.")
 	}
 	if d.View == "replace" || d.Step == post.Compose {
@@ -320,7 +339,7 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 	if err != nil {
 		return err
 	}
-	if d.Number != 0 {
+	if d.Locked() {
 		return nil
 	}
 	full := d.ReplacementSource != nil && d.ReplacementSource.MessageID == m.ID
@@ -417,6 +436,7 @@ func (a *App) action(ctx context.Context, b *bot.Bot, d *post.Draft, action stri
 		if err := d.Validate(); err != nil {
 			return a.notice(ctx, b, d, err.Error())
 		}
+		a.refreshChoices(ctx, b, d)
 		d.Preview, d.View, d.Notice = true, "preview", ""
 	case "back":
 		if d.View == "preview" {
@@ -425,7 +445,7 @@ func (a *App) action(ctx context.Context, b *bot.Bot, d *post.Draft, action stri
 		d.ResetView()
 		d.Notice, d.ReplacementSource = "", nil
 	default:
-		if d.Number != 0 {
+		if d.Locked() {
 			return a.notice(ctx, b, d, "Published posts are locked.")
 		}
 		switch {
@@ -457,6 +477,7 @@ func (a *App) action(ctx context.Context, b *bot.Bot, d *post.Draft, action stri
 				return a.notice(ctx, b, d, "That category is no longer available.")
 			}
 			d.Category, d.Notice = d.Categories[i], ""
+			d.OrderTags()
 			d.ResetView()
 		case strings.HasPrefix(action, "tag-"):
 			i, err := strconv.Atoi(strings.TrimPrefix(action, "tag-"))
@@ -544,6 +565,8 @@ func (a *App) list(ctx context.Context, b *bot.Bot) error {
 		status := "draft"
 		if d.Number != 0 {
 			status = fmt.Sprintf("post %d", d.Number)
+		} else if d.GitOperation != "" {
+			status = "publishing · " + d.GitState
 		}
 		lines = append(lines, fmt.Sprintf("%d · %s · %s", d.ID, title, status))
 	}

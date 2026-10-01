@@ -36,7 +36,13 @@ func Open(path string) (*Store, error) {
 		data TEXT NOT NULL,
 		number INTEGER UNIQUE
 	);
-	CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);`)
+	CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+	CREATE TABLE IF NOT EXISTS publications (
+		operation TEXT PRIMARY KEY,
+		draft_id INTEGER NOT NULL UNIQUE,
+		state TEXT NOT NULL,
+		data TEXT NOT NULL
+	);`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -104,7 +110,7 @@ func (s *Store) SaveCard(ctx context.Context, d *post.Draft) error {
 	if err != nil {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, "UPDATE drafts SET data=? WHERE id=? AND COALESCE(number,0)=?", string(data), d.ID, d.Number)
+	result, err := s.db.ExecContext(ctx, "UPDATE drafts SET data=? WHERE id=? AND COALESCE(number,0)=? AND COALESCE(json_extract(data,'$.GitOperation'),'')=?", string(data), d.ID, d.Number, d.GitOperation)
 	if err != nil {
 		return err
 	}
@@ -179,7 +185,7 @@ func (s *Store) Delete(ctx context.Context, id int64) (post.Draft, error) {
 	if err != nil {
 		return d, err
 	}
-	if d.Number != 0 {
+	if d.Locked() {
 		return d, ErrPublicationLocked
 	}
 	result, err := tx.ExecContext(ctx, "DELETE FROM drafts WHERE id=? AND COALESCE(number,0)=0", id)
@@ -212,6 +218,9 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 	}
 	if d.Number != 0 {
 		return d, nil
+	}
+	if d.GitOperation != "" {
+		return d, ErrPublicationLocked
 	}
 	if err := d.Validate(); err != nil {
 		return d, err

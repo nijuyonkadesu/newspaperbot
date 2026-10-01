@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"unicode/utf8"
 
@@ -21,11 +22,20 @@ func sendDocument(ctx context.Context, b *bot.Bot, chatID int64, d post.Draft) (
 	name := fmt.Sprintf("draft-%d.md", d.ID)
 	if d.Number != 0 {
 		name = fmt.Sprintf("%d.md", d.Number)
+		if d.Portfolio && d.Filename != "" {
+			name = filepath.Base(d.Filename)
+		}
 	}
 	return b.SendDocument(ctx, &bot.SendDocumentParams{ChatID: chatID, Document: &models.InputFileUpload{Filename: name, Data: bytes.NewReader(data)}})
 }
 
 func (a *App) publish(ctx context.Context, b *bot.Bot, d *post.Draft, retry bool) error {
+	if a.Repository == nil && d.GitOperation != "" && d.Number == 0 {
+		return a.notice(ctx, b, d, "Repository publishing is not configured. Restore its configuration to continue this publication.")
+	}
+	if a.Repository != nil && d.Number == 0 {
+		return a.queuePublication(ctx, b, d)
+	}
 	if err := d.Validate(); err != nil {
 		return a.notice(ctx, b, d, err.Error())
 	}
