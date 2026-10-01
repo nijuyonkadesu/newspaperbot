@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"html"
 	"log"
 	"slices"
 	"strconv"
@@ -52,7 +53,7 @@ Markdown body.
 
 /newpost — new draft (you can include the post after the command)
 Edit your original message to update the draft. More messages append to the body.
-The bot keeps one current card. Publish saves Markdown and posts to your channel.
+The bot keeps one current card. Publish saves Markdown and posts to your destination.
 
 /taxonomy — copyable categories and tags (pin the list)
 Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
@@ -60,11 +61,13 @@ Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
 /drafts · /resume <number> — saved drafts
 /replace — replace the whole post in one message
 /undo — remove the last body addition
+/remove — remove a source by reply or message ID
 /preview — rendered preview on the same card
 /download — download the Markdown file
 /publish — publish the active draft
 /cancel — delete the active unfinished draft
 /delete <number> — delete a saved draft (/delete uses the active draft)
+/channels — show the active publishing destination
 /setchannel <@name or ID> · /unsetchannel
 /help — show this help
 
@@ -72,7 +75,7 @@ Category and Tags are directly on each draft card. No Done step.
 You can keep several drafts open: edit their source messages or use their cards.
 Reply to a draft's card/source to add text there. Unthreaded text goes to the last
 draft selected with /newpost, /resume, or Replace post. Replying also targets draft commands.
-Deleting a source message in Telegram does not remove saved content; use /undo.`
+Telegram deletions are not detected; use /remove.`
 
 func (a *App) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	a.mu.Lock()
@@ -127,7 +130,7 @@ func (a *App) errorDraft(ctx context.Context, update *models.Update) (post.Draft
 		fields := strings.Fields(m.Text)
 		if len(fields) > 0 {
 			switch strings.SplitN(fields[0], "@", 2)[0] {
-			case "/start", "/help", "/taxonomy", "/drafts", "/setchannel", "/unsetchannel", "/delete", "/cancel":
+			case "/start", "/help", "/taxonomy", "/drafts", "/channels", "/setchannel", "/unsetchannel", "/delete", "/cancel", "/remove":
 				return post.Draft{}, sql.ErrNoRows
 			case "/resume":
 				if len(fields) == 2 {
@@ -157,6 +160,11 @@ func (a *App) privateChat(m *models.Message) bool {
 
 func (a *App) reply(ctx context.Context, b *bot.Bot, text string, markup models.ReplyMarkup) error {
 	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: a.OwnerID, Text: text, ReplyMarkup: markup, DisableNotification: true})
+	return err
+}
+
+func (a *App) replyHTML(ctx context.Context, b *bot.Bot, text string) error {
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: a.OwnerID, Text: text, ParseMode: models.ParseModeHTML, DisableNotification: true})
 	return err
 }
 
@@ -200,11 +208,13 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			}
 			d.View, d.Notice = "", ""
 			if len(fields) > 1 {
+				text, issue := importText(m)
 				a.refreshChoices(ctx, b, &d)
-				if err := d.Replace(post.Source{MessageID: m.ID, UpdateID: updateID, Text: m.Text}); err != nil {
+				if err := d.Replace(post.Source{MessageID: m.ID, UpdateID: updateID, Text: text}); err != nil {
 					d.Notice = err.Error()
-					d.Sources = []post.Source{{MessageID: m.ID, UpdateID: updateID, Text: m.Text, Full: true}}
+					d.Sources = []post.Source{{MessageID: m.ID, UpdateID: updateID, Text: text, Full: true}}
 				}
+				setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
 			}
 			d.LastMessageID = m.ID
 			if err := a.Store.Save(ctx, &d); err != nil {
@@ -246,8 +256,47 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				return nil
 			}
 			return a.discard(ctx, b, id, m.ID)
+		case "/remove":
+			const usage = "Reply with /remove · deleted source: /remove ID"
+			messageID := 0
+			if m.ReplyToMessage != nil && len(fields) == 1 {
+				messageID = m.ReplyToMessage.ID
+			} else if m.ReplyToMessage == nil && len(fields) == 2 {
+				var parseErr error
+				messageID, parseErr = strconv.Atoi(fields[1])
+				if parseErr != nil || messageID <= 0 {
+					return a.commandNotice(ctx, b, m, usage)
+				}
+			} else {
+				return a.commandNotice(ctx, b, m, usage)
+			}
+			d, err := a.Store.FromMessage(ctx, messageID)
+			if errors.Is(err, sql.ErrNoRows) {
+				return a.commandNotice(ctx, b, m, "Source unavailable · not in an unfinished draft")
+			}
+			if err != nil {
+				return err
+			}
+			if err := d.RemoveSource(messageID); err != nil {
+				if err := a.notice(ctx, b, &d, err.Error()); err != nil {
+					return err
+				}
+				a.deleteOwnerMessage(ctx, b, m.ID, "remove command")
+				return nil
+			}
+			if err := a.Store.Save(ctx, &d); err != nil {
+				return err
+			}
+			if err := a.render(ctx, b, &d); err != nil {
+				return err
+			}
+			a.deleteOwnerMessage(ctx, b, messageID, "removed source")
+			a.deleteOwnerMessage(ctx, b, m.ID, "remove command")
+			return nil
 		case "/drafts":
 			return a.list(ctx, b)
+		case "/channels":
+			return a.channels(ctx, b)
 		case "/resume":
 			if len(fields) != 2 {
 				return a.reply(ctx, b, "Use /resume <draft number> from /drafts.", nil)
@@ -273,14 +322,14 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			return a.render(ctx, b, &d)
 		case "/setchannel":
 			if len(fields) != 2 {
-				return a.reply(ctx, b, "Use /setchannel @channelname or /setchannel -1001234567890. Add the bot as an administrator with permission to post first.", nil)
+				return a.reply(ctx, b, "Use /setchannel @name or /setchannel -1001234567890. Add the bot as an administrator first.", nil)
 			}
 			return a.setChannel(ctx, b, fields[1])
 		case "/unsetchannel":
 			if err := a.Store.SetSetting(ctx, "channel", 0); err != nil {
 				return err
 			}
-			return a.reply(ctx, b, "Channel publishing disabled for future posts.", nil)
+			return a.reply(ctx, b, "Publishing destination cleared for future posts.", nil)
 		case "/preview", "/publish", "/replace", "/undo", "/download", "/done":
 			d, err := a.target(ctx, b, m)
 			if err != nil || d.ID == 0 {
@@ -308,13 +357,22 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 	if m.ID <= d.LastMessageID {
 		return nil
 	}
-	if m.Text == "" {
-		return a.notice(ctx, b, &d, "Send the post as text, using Markdown for the body.")
-	}
-	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: m.Text}
 	if d.Locked() {
 		return a.notice(ctx, b, &d, "This post is locked. Use /newpost for another draft.")
 	}
+	text, issue := importText(m)
+	if text == "" {
+		if issue == "" {
+			return nil
+		}
+		setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
+		d.LastMessageID = m.ID
+		if err := a.Store.Save(ctx, &d); err != nil {
+			return err
+		}
+		return a.render(ctx, b, &d)
+	}
+	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
 	if d.View == "replace" || d.Step == post.Compose {
 		a.refreshChoices(ctx, b, &d)
 		if err := d.Replace(source); err != nil {
@@ -324,6 +382,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				source.Full = true
 				d.Sources = []post.Source{source}
 			}
+			setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
 			d.LastMessageID = m.ID
 			return a.notice(ctx, b, &d, err.Error())
 		}
@@ -332,6 +391,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			d.Notice = err.Error()
 		}
 	}
+	setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
 	d.LastMessageID = m.ID
 	if err := a.Store.Save(ctx, &d); err != nil {
 		return err
@@ -350,6 +410,21 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 	if d.Locked() {
 		return nil
 	}
+	version := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate}
+	if !messageEditNewer(d, version) {
+		return nil
+	}
+	text, issue := importText(m)
+	if text == "" {
+		if issue == "" {
+			return nil
+		}
+		setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
+		if err := a.Store.Save(ctx, &d); err != nil {
+			return err
+		}
+		return a.render(ctx, b, &d)
+	}
 	full := d.ReplacementSource != nil && d.ReplacementSource.MessageID == m.ID
 	for _, source := range d.Sources {
 		full = full || source.MessageID == m.ID && source.Full
@@ -357,7 +432,7 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 	if full {
 		a.refreshChoices(ctx, b, &d)
 	}
-	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: m.Text}
+	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
 	if pending := d.ReplacementSource; pending != nil && pending.MessageID == m.ID {
 		if !source.NewerThan(*pending) {
 			return nil
@@ -367,13 +442,61 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 			d.Notice = err.Error()
 		}
 	} else if !d.EditSource(source) {
-		return nil
+		if !hasMessageIssue(d, m.ID) {
+			return nil
+		}
+		if d.View == "replace" || d.Step == post.Compose {
+			a.refreshChoices(ctx, b, &d)
+			err = d.Replace(source)
+			if err != nil {
+				if d.View == "replace" {
+					d.ReplacementSource = &source
+				} else {
+					source.Full = true
+					d.Sources = []post.Source{source}
+				}
+			}
+		} else {
+			err = d.Append(source)
+		}
+		if err != nil {
+			d.Notice = err.Error()
+		}
 	}
+	setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
 	if err := a.Store.Save(ctx, &d); err != nil {
 		return err
 	}
 	// An edit belongs to this draft even if the owner is currently working on another.
 	return a.render(ctx, b, &d)
+}
+
+func setMessageIssue(d *post.Draft, messageID int, updateID int64, editDate int, reason string) {
+	d.MessageIssues = slices.DeleteFunc(d.MessageIssues, func(issue post.MessageIssue) bool { return issue.MessageID == messageID })
+	if reason != "" {
+		d.MessageIssues = append(d.MessageIssues, post.MessageIssue{MessageID: messageID, UpdateID: updateID, EditDate: editDate, Reason: reason})
+	}
+}
+
+func hasMessageIssue(d post.Draft, messageID int) bool {
+	return slices.ContainsFunc(d.MessageIssues, func(issue post.MessageIssue) bool { return issue.MessageID == messageID })
+}
+
+func messageEditNewer(d post.Draft, incoming post.Source) bool {
+	for _, source := range d.Sources {
+		if source.MessageID == incoming.MessageID && !incoming.NewerThan(source) {
+			return false
+		}
+	}
+	if source := d.ReplacementSource; source != nil && source.MessageID == incoming.MessageID && !incoming.NewerThan(*source) {
+		return false
+	}
+	for _, issue := range d.MessageIssues {
+		if issue.MessageID == incoming.MessageID && !incoming.NewerThan(post.Source{UpdateID: issue.UpdateID, EditDate: issue.EditDate}) {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *App) target(ctx context.Context, b *bot.Bot, m *models.Message) (post.Draft, error) {
@@ -559,6 +682,36 @@ func (a *App) notice(ctx context.Context, b *bot.Bot, d *post.Draft, text string
 	return a.render(ctx, b, d)
 }
 
+func (a *App) commandNotice(ctx context.Context, b *bot.Bot, m *models.Message, text string) error {
+	var d post.Draft
+	var err error
+	if m.ReplyToMessage != nil {
+		d, err = a.Store.FromMessage(ctx, m.ReplyToMessage.ID)
+	}
+	if d.ID == 0 && (err == nil || errors.Is(err, sql.ErrNoRows)) {
+		d, err = a.Store.Active(ctx)
+	}
+	if err == nil {
+		err = a.notice(ctx, b, &d, text)
+	} else if errors.Is(err, sql.ErrNoRows) {
+		err = a.reply(ctx, b, text, nil)
+	}
+	if err != nil {
+		return err
+	}
+	a.deleteOwnerMessage(ctx, b, m.ID, "command cleanup")
+	return nil
+}
+
+func (a *App) deleteOwnerMessage(ctx context.Context, b *bot.Bot, messageID int, label string) {
+	if messageID == 0 {
+		return
+	}
+	if _, err := b.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: a.OwnerID, MessageID: messageID}); err != nil {
+		a.logError(b, label, err)
+	}
+}
+
 func (a *App) list(ctx context.Context, b *bot.Bot) error {
 	drafts, err := a.Store.List(ctx)
 	if err != nil {
@@ -578,39 +731,84 @@ func (a *App) list(ctx context.Context, b *bot.Bot) error {
 	return a.reply(ctx, b, strings.Join(lines, "\n"), nil)
 }
 
+func (a *App) channels(ctx context.Context, b *bot.Bot) error {
+	id, err := a.Store.Setting(ctx, "channel")
+	if err != nil {
+		return err
+	}
+	if id == 0 {
+		return a.reply(ctx, b, "No publishing destination configured. Use /setchannel.", nil)
+	}
+	chat, err := b.GetChat(ctx, &bot.GetChatParams{ChatID: id})
+	if err != nil {
+		return a.replyHTML(ctx, b, fmt.Sprintf("<b>Destination unavailable</b>\n<code>%d</code>", id))
+	}
+	heading := "Groups"
+	if chat.Type == models.ChatTypeChannel {
+		heading = "Channels"
+	}
+	parts := []string{"<b>" + html.EscapeString(chat.Title) + "</b>"}
+	if chat.Username != "" {
+		parts = append(parts, "@"+html.EscapeString(chat.Username))
+	}
+	parts = append(parts, fmt.Sprintf("<code>%d</code>", chat.ID))
+	return a.replyHTML(ctx, b, "<b>"+heading+"</b>\n"+strings.Join(parts, " · "))
+}
+
 func (a *App) setChannel(ctx context.Context, b *bot.Bot, target string) error {
 	var chatID any = target
 	if !strings.HasPrefix(target, "@") {
 		id, err := strconv.ParseInt(target, 10, 64)
 		if err != nil || id >= 0 {
-			return a.reply(ctx, b, "Use a channel @username or negative numeric ID.", nil)
+			return a.reply(ctx, b, "Use a channel or group @username or negative numeric ID.", nil)
 		}
 		chatID = id
 	}
 	chat, err := b.GetChat(ctx, &bot.GetChatParams{ChatID: chatID})
 	if err != nil {
-		return a.reply(ctx, b, "Cannot access that channel. Add the bot as an administrator with permission to post, then try again.", nil)
+		return a.reply(ctx, b, "Cannot access that destination. Add the bot as an administrator, then try again.", nil)
 	}
-	if chat.Type != models.ChatTypeChannel {
-		return a.reply(ctx, b, "The destination must be a channel.", nil)
-	}
-	if err := a.checkChannel(ctx, b, chat.ID); err != nil {
+	if err := a.validateDestination(ctx, b, chat); err != nil {
 		return a.reply(ctx, b, err.Error(), nil)
 	}
 	if err := a.Store.SetSetting(ctx, "channel", chat.ID); err != nil {
 		return err
 	}
-	return a.reply(ctx, b, "Channel set to "+chat.Title+" for future posts.", nil)
+	return a.reply(ctx, b, "Publishing destination set to "+chat.Title+".", nil)
 }
 
-func (a *App) checkChannel(ctx context.Context, b *bot.Bot, id int64) error {
-	member, err := b.GetChatMember(ctx, &bot.GetChatMemberParams{ChatID: id, UserID: b.ID()})
-	if err != nil || member == nil || member.Type != models.ChatMemberTypeAdministrator || member.Administrator == nil || !member.Administrator.CanPostMessages {
-		return errors.New("the bot must be a channel administrator with permission to post")
+func (a *App) checkDestination(ctx context.Context, b *bot.Bot, id int64) error {
+	chat, err := b.GetChat(ctx, &bot.GetChatParams{ChatID: id})
+	if err != nil {
+		return errors.New("cannot access the configured publishing destination")
 	}
-	member, err = b.GetChatMember(ctx, &bot.GetChatMemberParams{ChatID: id, UserID: a.OwnerID})
-	if err != nil || member == nil || !slices.Contains([]models.ChatMemberType{models.ChatMemberTypeOwner, models.ChatMemberTypeAdministrator, models.ChatMemberTypeMember}, member.Type) {
-		return errors.New("you must be a member of the destination channel")
+	return a.validateDestination(ctx, b, chat)
+}
+
+func (a *App) validateDestination(ctx context.Context, b *bot.Bot, chat *models.ChatFullInfo) error {
+	if !slices.Contains([]models.ChatType{models.ChatTypeChannel, models.ChatTypeGroup, models.ChatTypeSupergroup}, chat.Type) {
+		return errors.New("the publishing destination must be a channel, group, or supergroup")
+	}
+	member, err := b.GetChatMember(ctx, &bot.GetChatMemberParams{ChatID: chat.ID, UserID: b.ID()})
+	if err != nil || member == nil || member.Type != models.ChatMemberTypeAdministrator || member.Administrator == nil {
+		return errors.New("the bot must be an administrator of the publishing destination")
+	}
+	if chat.Type == models.ChatTypeChannel && !member.Administrator.CanPostMessages {
+		return errors.New("the bot must have permission to post messages in the channel")
+	}
+	member, err = b.GetChatMember(ctx, &bot.GetChatMemberParams{ChatID: chat.ID, UserID: a.OwnerID})
+	if err != nil || !isChatMember(member) {
+		return errors.New("you must be a member of the publishing destination")
 	}
 	return nil
+}
+
+func isChatMember(member *models.ChatMember) bool {
+	if member == nil {
+		return false
+	}
+	if slices.Contains([]models.ChatMemberType{models.ChatMemberTypeOwner, models.ChatMemberTypeAdministrator, models.ChatMemberTypeMember}, member.Type) {
+		return true
+	}
+	return member.Type == models.ChatMemberTypeRestricted && member.Restricted != nil && member.Restricted.IsMember
 }

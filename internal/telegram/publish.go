@@ -70,7 +70,7 @@ func (a *App) publish(ctx context.Context, b *bot.Bot, d *post.Draft, retry bool
 			return err
 		}
 		if channel != 0 {
-			if err := a.checkChannel(ctx, b, channel); err != nil {
+			if err := a.checkDestination(ctx, b, channel); err != nil {
 				return a.notice(ctx, b, d, err.Error())
 			}
 		}
@@ -97,8 +97,8 @@ func (a *App) publish(ctx context.Context, b *bot.Bot, d *post.Draft, retry bool
 		}
 	}
 	if d.ChannelID != 0 && d.Delivery != "sent" {
-		if err := a.checkChannel(ctx, b, d.ChannelID); err != nil {
-			return a.notice(ctx, b, d, "Markdown saved. "+err.Error()+". Restore channel access and continue publishing.")
+		if err := a.checkDestination(ctx, b, d.ChannelID); err != nil {
+			return a.notice(ctx, b, d, "Markdown saved. "+err.Error()+". Restore destination access and continue publishing.")
 		}
 		if err := a.deliver(ctx, b, d); err != nil {
 			return err
@@ -177,7 +177,7 @@ func (a *App) deliveryError(ctx context.Context, b *bot.Bot, d *post.Draft, err 
 		if saveErr := a.Store.Save(ctx, d); saveErr != nil {
 			return saveErr
 		}
-		return a.notice(ctx, b, d, "Markdown saved; Telegram rejected the channel message. Check permissions or wait if rate limited, then continue publishing.")
+		return a.notice(ctx, b, d, "Markdown saved; Telegram rejected the destination message. Check permissions or wait if rate limited, then continue publishing.")
 	}
 	if promptErr := a.prompt(ctx, b, *d); promptErr != nil {
 		return errors.Join(err, promptErr)

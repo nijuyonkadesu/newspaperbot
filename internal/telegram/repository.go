@@ -21,7 +21,7 @@ func (a *App) queuePublication(ctx context.Context, b *bot.Bot, d *post.Draft) e
 		channel = d.ChannelID
 	}
 	if channel != 0 {
-		if err := a.checkChannel(ctx, b, channel); err != nil {
+		if err := a.checkDestination(ctx, b, channel); err != nil {
 			return a.notice(ctx, b, d, err.Error())
 		}
 	}
@@ -89,7 +89,7 @@ func (a *App) runPublication(ctx context.Context, b *bot.Bot, job *store.Publica
 		return
 	}
 	if err := a.publish(uiCtx, b, &d, false); err != nil {
-		a.logError(b, "publication channel", err)
-		_ = a.notice(uiCtx, b, &d, "Committed to main. Continue publishing to finish channel delivery.")
+		a.logError(b, "publication destination", err)
+		_ = a.notice(uiCtx, b, &d, "Committed to main. Continue publishing to finish destination delivery.")
 	}
 }

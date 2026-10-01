@@ -3,6 +3,7 @@ package post
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,6 +25,13 @@ type Source struct {
 	ParseError string // Invalid full-message edit; do not publish the previous snapshot.
 }
 
+type MessageIssue struct {
+	MessageID int
+	UpdateID  int64
+	EditDate  int
+	Reason    string
+}
+
 // Draft also holds publication progress so interrupted exports can be recovered.
 type Draft struct {
 	ID                int64 // Stable database identity; never shown to the owner.
@@ -35,6 +43,7 @@ type Draft struct {
 	Notice            string
 	Invalid           string
 	Sources           []Source
+	MessageIssues     []MessageIssue
 	ReplacementSource *Source
 	BaseContent       string
 
@@ -155,7 +164,7 @@ func (d *Draft) Replace(source Source) error {
 	source.Full = true
 	parsed.applyTaxonomy(d, &source)
 	d.Title, d.Summary, d.Content = parsed.title, parsed.summary, parsed.body
-	d.Sources, d.BaseContent, d.ReplacementSource = []Source{source}, "", nil
+	d.Sources, d.MessageIssues, d.BaseContent, d.ReplacementSource = []Source{source}, nil, "", nil
 	d.Step, d.Notice, d.Invalid, d.PendingContent = Review, "", "", ""
 	d.ResetView()
 	return nil
@@ -206,8 +215,47 @@ func (d *Draft) Undo() error {
 	if d.Locked() || len(d.Sources) == 0 || d.Sources[len(d.Sources)-1].Full {
 		return errors.New("there is no appended message to undo")
 	}
+	messageID := d.Sources[len(d.Sources)-1].MessageID
 	d.Sources = d.Sources[:len(d.Sources)-1]
+	d.MessageIssues = slices.DeleteFunc(d.MessageIssues, func(issue MessageIssue) bool { return issue.MessageID == messageID })
 	return d.rebuild()
+}
+
+func (d *Draft) RemoveSource(messageID int) error {
+	if d.Locked() {
+		return errors.New("published posts are locked")
+	}
+	for _, source := range d.Sources {
+		if source.MessageID == messageID && source.Full {
+			return errors.New("Original post · use /replace or /cancel")
+		}
+	}
+
+	found, sourceRemoved := false, false
+	d.Sources = slices.DeleteFunc(d.Sources, func(source Source) bool {
+		remove := source.MessageID == messageID
+		found = found || remove
+		sourceRemoved = sourceRemoved || remove
+		return remove
+	})
+	d.MessageIssues = slices.DeleteFunc(d.MessageIssues, func(issue MessageIssue) bool {
+		remove := issue.MessageID == messageID
+		found = found || remove
+		return remove
+	})
+	if d.ReplacementSource != nil && d.ReplacementSource.MessageID == messageID {
+		d.ReplacementSource, found = nil, true
+	}
+	if !found {
+		return errors.New("Source not found in this draft")
+	}
+	if sourceRemoved {
+		_ = d.rebuild() // Another invalid source may still require review.
+	} else {
+		d.Notice = ""
+	}
+	d.ResetView()
+	return nil
 }
 
 func (d *Draft) rebuild() error {

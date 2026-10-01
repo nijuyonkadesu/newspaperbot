@@ -219,7 +219,7 @@ func TestRenderedPreviewFallbackKeepsOneCard(t *testing.T) {
 	h.api.mu.Unlock()
 	h.send("A correction")
 	d := h.active()
-	if d.CardID != cardID || h.api.live()[0].RichMarkdown != previewMarkdown(d) || d.Notice != "" {
+	if d.CardID != cardID || h.api.live()[0].RichMarkdown != previewMarkdown(d, h.bot.ID()) || d.Notice != "" {
 		t.Fatal("content correction did not restore preview on the same card")
 	}
 }
@@ -235,7 +235,7 @@ func TestPreviewSurvivesContentUpdatesAndRestartOnTheSameCard(t *testing.T) {
 		t.Helper()
 		d := h.active()
 		live := h.api.live()
-		if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || live[0].RichMarkdown != previewMarkdown(d) {
+		if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || live[0].RichMarkdown != previewMarkdown(d, h.bot.ID()) {
 			t.Fatal("content update lost preview or replaced its card")
 		}
 		if !strings.Contains(live[0].RichMarkdown, fmt.Sprintf("`#%d`", d.Slot)) || strings.Contains(live[0].RichMarkdown, fmt.Sprintf("Draft %d", d.Slot)) {

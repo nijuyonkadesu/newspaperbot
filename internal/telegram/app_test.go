@@ -39,6 +39,7 @@ type fakeAPI struct {
 	nextID           int
 	ownerAbsent      bool
 	botCannotPost    bool
+	botNotAdmin      bool
 	editError        string
 	deleteRejected   bool
 	richRejected     bool
@@ -122,18 +123,24 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	var result any
 	switch call.Method {
 	case "getChat":
-		id, kind := int64(-1001), "channel"
-		if r.FormValue("chat_id") == "@other" {
+		id, kind, username := int64(-1001), "channel", "first"
+		switch r.FormValue("chat_id") {
+		case "@other", "-2002":
 			id = -2002
-		}
-		if r.FormValue("chat_id") == "@group" {
+			username = "other"
+		case "@group", "-3003":
+			id = -3003
 			kind = "supergroup"
+			username = "group"
 		}
-		result = map[string]any{"id": id, "type": kind, "title": "Test channel"}
+		result = map[string]any{"id": id, "type": kind, "title": "Test destination", "username": username}
 	case "getChatMember":
 		status := "member"
 		if r.FormValue("user_id") == "123" {
 			status = "administrator"
+			if f.botNotAdmin {
+				status = "member"
+			}
 		} else if f.ownerAbsent {
 			status = "left"
 		}
@@ -347,7 +354,7 @@ func TestLocalPublishAndPreview(t *testing.T) {
 	d := h.ready("# Heading\n\n**bold** and `code`")
 	h.send("/preview")
 	calls := h.api.snapshot()
-	if calls[len(calls)-1].RichMarkdown != previewMarkdown(d) {
+	if calls[len(calls)-1].RichMarkdown != previewMarkdown(d, h.bot.ID()) {
 		t.Fatal("preview did not pass Markdown to Telegram")
 	}
 	h.send("/publish")
@@ -371,19 +378,35 @@ func TestLocalPublishAndPreview(t *testing.T) {
 
 func TestChannelConfigurationAndMembership(t *testing.T) {
 	h := newHarness(t)
+	h.send("/channels")
+	if calls := h.api.snapshot(); calls[len(calls)-1].Text != "No publishing destination configured. Use /setchannel." {
+		t.Fatal("empty destination list was unclear")
+	}
 	h.send("/setchannel @first")
 	h.send("/setchannel @other")
 	channel, err := h.app.Store.Setting(context.Background(), "channel")
 	if err != nil || channel != -2002 {
 		t.Fatal("channel replacement failed")
 	}
+	h.send("/channels")
+	if calls := h.api.snapshot(); calls[len(calls)-1].ParseMode != "HTML" || calls[len(calls)-1].Text != "<b>Channels</b>\n<b>Test destination</b> · @other · <code>-2002</code>" {
+		t.Fatal("configured channel was not grouped under Channels")
+	}
 	h.send("/setchannel @group")
+	channel, err = h.app.Store.Setting(context.Background(), "channel")
+	if err != nil || channel != -3003 {
+		t.Fatal("supergroup destination was rejected")
+	}
+	h.send("/channels")
+	if calls := h.api.snapshot(); calls[len(calls)-1].ParseMode != "HTML" || calls[len(calls)-1].Text != "<b>Groups</b>\n<b>Test destination</b> · @group · <code>-3003</code>" {
+		t.Fatal("configured destination was not listed with its current status")
+	}
 	h.api.mu.Lock()
 	h.api.ownerAbsent = true
 	h.api.mu.Unlock()
 	h.send("/setchannel @first")
 	channel, err = h.app.Store.Setting(context.Background(), "channel")
-	if err != nil || channel != -2002 {
+	if err != nil || channel != -3003 {
 		t.Fatal("invalid destination replaced the channel")
 	}
 	h.api.mu.Lock()
@@ -392,8 +415,17 @@ func TestChannelConfigurationAndMembership(t *testing.T) {
 	h.api.mu.Unlock()
 	h.send("/setchannel @first")
 	channel, err = h.app.Store.Setting(context.Background(), "channel")
-	if err != nil || channel != -2002 {
+	if err != nil || channel != -3003 {
 		t.Fatal("bot without posting rights accepted")
+	}
+	h.api.mu.Lock()
+	h.api.botCannotPost = false
+	h.api.botNotAdmin = true
+	h.api.mu.Unlock()
+	h.send("/setchannel @group")
+	channel, err = h.app.Store.Setting(context.Background(), "channel")
+	if err != nil || channel != -3003 {
+		t.Fatal("non-administrator bot replaced the destination")
 	}
 	h.send("/unsetchannel")
 	channel, err = h.app.Store.Setting(context.Background(), "channel")

@@ -58,7 +58,7 @@ Draft and publish a post from your private chat with the bot: **one message, the
    your selected category and tags. New names join the taxonomy, and the post
    and updated references land together on the repository's `main` branch.
 
-   If you've configured a channel, the bot posts there after the repository
+   If you've configured a channel or group, the bot posts there after the repository
    publication succeeds. The card shows the result without another success
    message. A queued or published post is locked against editing and deletion.
 
@@ -76,9 +76,11 @@ Useful commands while writing:
 - `/cancel` — delete the entire active unfinished draft and remove its card.
 - `/delete <number>` — delete a specific unfinished draft; `/delete` uses the active
   draft. Successful deletion gets a 👍 reaction or a brief confirmation.
-- `/setchannel @channel` — set or change the destination. Add the bot as an
+- `/channels` — show the configured destination and its current permission status.
+- `/setchannel @name` — set or change the channel or group. Add the bot as an
   administrator with permission to post, and be a member yourself. Changes apply
-  to future publications; `/unsetchannel` disables channel posting.
+  to future publications; `/unsetchannel` disables destination posting.
 
-Drafts survive restarts. Deleting a source message in Telegram does not remove
-its saved content; use `/undo`, `/replace`, or `/cancel` instead.
+Drafts survive restarts. Reply to an appended source with `/remove` to remove it
+from the draft and clear both messages from the chat. If the source is already
+gone, use the copyable `/remove <message ID>` shown under **Review**.

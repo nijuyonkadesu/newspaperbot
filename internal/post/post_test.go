@@ -41,8 +41,12 @@ func TestComposerSourcesAndReplacement(t *testing.T) {
 		t.Fatal("invalid edit discarded valid content or allowed publishing")
 	}
 	d.EditSource(Source{MessageID: 1, UpdateID: 6, Text: "Fixed title\n\nFixed summary\n\nFixed body"})
+	d.MessageIssues = []MessageIssue{{MessageID: 2, Reason: "review"}}
 	if err := d.Undo(); err != nil || d.Content != "Fixed body" {
 		t.Fatal("undo failed")
+	}
+	if len(d.MessageIssues) != 0 {
+		t.Fatal("undo retained the removed source's issue")
 	}
 	if err := d.Undo(); err == nil {
 		t.Fatal("undo removed original post")
@@ -50,6 +54,29 @@ func TestComposerSourcesAndReplacement(t *testing.T) {
 	d.Number = 43
 	if d.EditSource(Source{MessageID: 1, UpdateID: 7, Text: "Locked"}) || d.Replace(Source{Text: "New\n\nSummary\n\nBody"}) == nil {
 		t.Fatal("publication remained editable")
+	}
+}
+
+func TestRemoveArbitrarySourceAndIssue(t *testing.T) {
+	d := Draft{Category: "development"}
+	if err := d.Replace(Source{MessageID: 1, Text: "Title\n\nSummary\n\nBody"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = d.Append(Source{MessageID: 2, Text: "First"})
+	_ = d.Append(Source{MessageID: 3, Text: "Second"})
+	d.MessageIssues = []MessageIssue{{MessageID: 2, Reason: "review"}, {MessageID: 4, Reason: "ignored rich message"}}
+
+	if err := d.RemoveSource(2); err != nil || d.Content != "Body\n\nSecond" || len(d.MessageIssues) != 1 {
+		t.Fatalf("middle source was not removed cleanly: content=%q issues=%+v err=%v", d.Content, d.MessageIssues, err)
+	}
+	if err := d.RemoveSource(4); err != nil || len(d.MessageIssues) != 0 || d.Content != "Body\n\nSecond" {
+		t.Fatal("issue-only source was not removed")
+	}
+	if err := d.RemoveSource(1); err == nil || d.Content != "Body\n\nSecond" {
+		t.Fatal("original post was removed or changed")
+	}
+	if err := d.RemoveSource(99); err == nil {
+		t.Fatal("unknown source was reported as removed")
 	}
 }
 

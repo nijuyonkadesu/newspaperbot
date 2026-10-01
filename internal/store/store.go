@@ -273,8 +273,9 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 func (s *Store) FromMessage(ctx context.Context, messageID int) (post.Draft, error) {
 	return decode(s.db.QueryRowContext(ctx, `SELECT id,slot,data FROM drafts WHERE EXISTS
  (SELECT 1 FROM json_each(drafts.data, '$.Sources') WHERE json_extract(value, '$.MessageID') = ?)
+	OR EXISTS (SELECT 1 FROM json_each(drafts.data, '$.MessageIssues') WHERE json_extract(value, '$.MessageID') = ?)
  OR json_extract(data, '$.ReplacementSource.MessageID') = ?
- OR json_extract(data, '$.CardID') = ?`, messageID, messageID, messageID))
+	OR json_extract(data, '$.CardID') = ?`, messageID, messageID, messageID, messageID))
 }
 
 func prepareDraftSlots(db *sql.DB) error {

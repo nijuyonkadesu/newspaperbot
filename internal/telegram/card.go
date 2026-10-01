@@ -54,13 +54,52 @@ func draftKeyboard(d post.Draft, preview bool) *models.InlineKeyboardMarkup {
 	return markup
 }
 
-func previewMarkdown(d post.Draft) string {
+func previewMarkdown(d post.Draft, botID int64) string {
 	tags := strings.Join(d.TagLabels(), ", ")
 	if tags == "" {
 		tags = "none"
 	}
 	escape := func(text string) string { return bot.EscapeMarkdown(html.EscapeString(text)) }
-	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.Slot, escape(d.CategoryLabel()), escape(tags))
+	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.Slot, escape(d.CategoryLabel()), escape(tags)) + messageIssuesMarkdown(d.MessageIssues, botID) + statusMarkdown(d.Notice)
+}
+
+func statusMarkdown(status string) string {
+	if status == "" {
+		return ""
+	}
+	return "\n\n**Status** · " + bot.EscapeMarkdown(status)
+}
+
+func sourceLink(botID int64, messageID int) string {
+	return fmt.Sprintf("tg://openmessage?user_id=%d&message_id=%d", botID, messageID)
+}
+
+func messageIssuesMarkdown(issues []post.MessageIssue, botID int64) string {
+	if len(issues) == 0 {
+		return ""
+	}
+	var text strings.Builder
+	text.WriteString("\n\n**Review**")
+	for i, issue := range issues {
+		separator := "\n- "
+		if i == 0 {
+			separator = "\n\n- "
+		}
+		fmt.Fprintf(&text, "%s[Source](%s) · %s · `/remove %d`", separator, sourceLink(botID, issue.MessageID), bot.EscapeMarkdown(issue.Reason), issue.MessageID)
+	}
+	return text.String()
+}
+
+func messageIssuesHTML(issues []post.MessageIssue, botID int64) string {
+	if len(issues) == 0 {
+		return ""
+	}
+	var text strings.Builder
+	text.WriteString("\n\n<b>Review</b>")
+	for _, issue := range issues {
+		fmt.Fprintf(&text, "\n<a href=\"%s\">Source</a> · %s · <code>/remove %d</code>", html.EscapeString(sourceLink(botID, issue.MessageID)), html.EscapeString(issue.Reason), issue.MessageID)
+	}
+	return text.String()
 }
 
 func overview(d post.Draft) string {
@@ -78,7 +117,7 @@ func overview(d post.Draft) string {
 	return text
 }
 
-func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
+func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 	text := overview(d)
 	markup := draftKeyboard(d, false)
 	switch {
@@ -103,11 +142,11 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 			markup = keyboard(d, "Continue publishing", "publish", "Download", "download")
 		}
 		if d.ChannelID != 0 {
-			text += "\nChannel · " + html.EscapeString(d.Delivery)
+			text += "\nDestination · " + html.EscapeString(d.Delivery)
 		}
 		if d.Delivery == "uncertain" {
-			text += "\n\nCheck the channel first. Retrying may duplicate the last message."
-			markup = keyboard(d, "Checked channel · retry", "retry", "Download", "download")
+			text += "\n\nCheck the destination first. Retrying may duplicate the last message."
+			markup = keyboard(d, "Checked destination · retry", "retry", "Download", "download")
 		}
 	case d.View == "replace" || d.Step == post.Compose:
 		source := example
@@ -195,8 +234,9 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 		text += "\n<i>* new value · added when published</i>"
 	}
 	if d.Notice != "" {
-		text += "\n\n" + html.EscapeString(clip(d.Notice, 350))
+		text += "\n\n<b>Status</b> · " + html.EscapeString(clip(d.Notice, 350))
 	}
+	text += messageIssuesHTML(d.MessageIssues, botID)
 	return text, markup
 }
 
@@ -255,17 +295,17 @@ func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 			return err
 		}
 	}
-	tooLong := d.View == "preview" && utf8.RuneCountInString(previewMarkdown(*d)) > 32768
+	tooLong := d.View == "preview" && utf8.RuneCountInString(previewMarkdown(*d, b.ID())) > 32768
 	if tooLong {
 		d.Notice = "This post is too long for an inline preview. /download contains the complete Markdown."
 		if err := a.Store.Save(ctx, d); err != nil {
 			return err
 		}
 	}
-	text, markup := card(*d)
+	text, markup := card(*d, b.ID())
 	var rich *models.InputRichMessage
 	if d.View == "preview" && d.Invalid == "" && !tooLong && !d.Locked() {
-		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d)}
+		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d, b.ID())}
 	}
 	err := a.writeCard(ctx, b, d, text, markup, rich)
 	if rich != nil && errors.Is(err, bot.ErrorBadRequest) {
@@ -273,7 +313,7 @@ func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 		if saveErr := a.Store.Save(ctx, d); saveErr != nil {
 			return saveErr
 		}
-		text, markup = card(*d)
+		text, markup = card(*d, b.ID())
 		return a.writeCard(ctx, b, d, text, markup, nil)
 	}
 	return err
