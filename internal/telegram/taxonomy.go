@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -18,28 +19,84 @@ import (
 )
 
 func taxonomyText(c metadata.Catalog) (string, error) {
+	if len(c.Categories) == 0 {
+		return "", errors.New("no categories available")
+	}
 	var text strings.Builder
-	text.WriteString("<b>Categories</b> · choose one\n")
-	for _, name := range c.Categories {
-		fmt.Fprintf(&text, "<code>%s</code>\n", html.EscapeString(name))
+	categories := sortedNames(c.Categories)
+	text.WriteString("<b>Categories</b>\n")
+	if c.Groups == nil {
+		for i, category := range categories {
+			fmt.Fprintf(&text, "\n<b>%d.</b> <code>%s</code>\n", i+1, html.EscapeString(category))
+		}
+		text.WriteString("\n<b>Tags</b>\n")
+		if len(c.Tags) == 0 {
+			text.WriteString("<i>None</i>\n")
+		} else {
+			writeInlineCodes(&text, sortedNames(c.Tags))
+		}
+	} else {
+		grouped := make(map[string]bool, len(c.Tags))
+		for i, category := range categories {
+			fmt.Fprintf(&text, "\n<b>%d.</b> <code>%s</code>\n", i+1, html.EscapeString(category))
+			tags := sortedNames(c.Groups[category])
+			if len(tags) == 0 {
+				text.WriteString("<i>No observed tags</i>\n")
+				continue
+			}
+			writeInlineCodes(&text, tags)
+			for _, tag := range tags {
+				grouped[tag] = true
+			}
+		}
+		var other []string
+		for _, tag := range c.Tags {
+			if !grouped[tag] {
+				other = append(other, tag)
+			}
+		}
+		if len(other) > 0 {
+			text.WriteString("\n<b>Other tags</b>\n")
+			writeInlineCodes(&text, sortedNames(other))
+		}
 	}
-	text.WriteString("\n<b>Tags</b> · choose any\n")
-	for _, name := range c.Tags {
-		fmt.Fprintf(&text, "<code>%s</code>\n", html.EscapeString(name))
-	}
-	if len(c.Tags) == 0 {
-		text.WriteString("No tags available.\n")
-	}
+
 	tags := "-"
-	if len(c.Tags) > 0 {
-		tags = strings.Join(c.Tags[:min(2, len(c.Tags))], ", ")
+	sampleTags := c.Tags
+	if c.Groups != nil {
+		sampleTags = c.Groups[categories[0]]
 	}
-	fmt.Fprintf(&text, "\n<b>Optional post footer</b> · last two lines\n<pre>Category: %s\nTags: %s</pre>\n<i>Pin this list. It refreshes in place when the sources change. Use - for no tags.</i>", html.EscapeString(c.Categories[0]), html.EscapeString(tags))
+	sampleTags = sortedNames(sampleTags)
+	if len(sampleTags) > 0 {
+		tags = strings.Join(sampleTags[:min(2, len(sampleTags))], ", ")
+	}
+	fmt.Fprintf(&text, "\n<b>Post footer</b>\n<pre>Category: %s\nTags: %s</pre>", html.EscapeString(categories[0]), html.EscapeString(tags))
 	result := text.String()
 	if utf8.RuneCountInString(html.UnescapeString(result)) > 4096 {
 		return "", errors.New("category/tag list is too long for a single Telegram message")
 	}
 	return result, nil
+}
+
+func sortedNames(values []string) []string {
+	names := slices.Clone(values)
+	slices.SortFunc(names, func(a, b string) int {
+		if order := strings.Compare(strings.ToLower(a), strings.ToLower(b)); order != 0 {
+			return order
+		}
+		return strings.Compare(a, b)
+	})
+	return names
+}
+
+func writeInlineCodes(text *strings.Builder, values []string) {
+	for i, value := range values {
+		if i > 0 {
+			text.WriteString(" · ")
+		}
+		fmt.Fprintf(text, "<code>%s</code>", html.EscapeString(value))
+	}
+	text.WriteByte('\n')
 }
 
 // SyncTaxonomy edits the last /taxonomy output, preserving its message ID and pin.

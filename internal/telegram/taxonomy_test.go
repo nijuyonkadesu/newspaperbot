@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/go-telegram/bot/models"
+	"newspaperbot/internal/metadata"
 	"newspaperbot/internal/post"
 )
 
@@ -56,6 +57,39 @@ func (h *harness) syncTaxonomy(requested bool) {
 	h.t.Helper()
 	if err := h.app.SyncTaxonomy(context.Background(), h.bot, requested); err != nil {
 		h.t.Fatal(err)
+	}
+}
+
+func TestTaxonomyTextPreservesCategoryTagGroups(t *testing.T) {
+	text, err := taxonomyText(metadata.Catalog{
+		Categories: []string{"personal", "empty", "concept", "CI"},
+		Tags:       []string{"go", "sqlite", "shared", "unassigned"},
+		Groups: map[string][]string{
+			"concept":  {"sqlite", "shared"},
+			"personal": {"go", "shared"},
+			"empty":    {},
+			"CI":       {"sqlite", "go"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	concept := "<b>2.</b> <code>concept</code>\n<code>shared</code> · <code>sqlite</code>"
+	personal := "<b>4.</b> <code>personal</code>\n<code>go</code> · <code>shared</code>"
+	if !strings.Contains(text, concept) || !strings.Contains(text, personal) {
+		t.Fatal("category/tag relationships were flattened or not sorted")
+	}
+	if strings.Count(text, "<code>shared</code>") != 2 {
+		t.Fatal("tag shared across categories was deduplicated")
+	}
+	if !strings.Contains(text, "<b>3.</b> <code>empty</code>\n<i>No observed tags</i>") || !strings.Contains(text, "<b>Other tags</b>\n<code>unassigned</code>") {
+		t.Fatal("empty groups or unassigned tags were lost")
+	}
+	if !strings.Contains(text, "<b>1.</b> <code>CI</code>") || !strings.Contains(text, "<pre>Category: CI\nTags: go, sqlite</pre>") {
+		t.Fatal("footer example did not use the category group")
+	}
+	if strings.Contains(text, "observed use") || strings.Contains(text, "Pin this message") {
+		t.Fatal("taxonomy includes explanatory clutter")
 	}
 }
 
