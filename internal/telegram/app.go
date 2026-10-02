@@ -52,33 +52,35 @@ Short summary.
 
 Markdown body.
 
-/newpost — new draft (you can include the post after the command)
-Edit your original message to update the draft. More messages append to the body.
-Each post has one card. Publish saves Markdown and posts to your destination.
+/newpost — start a draft; optionally include the post
+Edit your source message; new messages append. One card updates in place.
 
-/taxonomy — copyable categories and tags (pin the list)
-Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
+/taxonomy — copy categories and grouped tags; pin the list
+Optional footer: Category: name, then Tags: tag1, tag2 (or -).
 
-/drafts · /resume <number> — saved drafts
-/posts — live articles; reply to the list with a number to jump
-/edit <article number> — edit a live article; resume pending changes
-/save — save article changes, preserving its number, date, and URL
-/replace — replace the whole post in one message
-/undo — remove the last appended text; keeps the chat message
-/remove — remove a source by reply or message ID
-/download — download the Markdown file
-/publish — publish the active draft
-/cancel — delete the active draft, or discard pending article changes
-/delete <number> — delete a specific saved draft
-/channels — show the active publishing destination
-/setchannel <@name or ID> · /unsetchannel
-/help — show this help
+/drafts · /resume <draft number> — list / resume drafts
+/posts — browse published articles; reply with a number to jump
+/edit <article number> — edit / resume article
+/save — save edits; keep article number, date, and URL
+/replace — replace entire post
+/undo — remove last appended text; keep chat message
+/remove · /remove <message ID> — remove addition by reply / ID
+/download — download Markdown
+/publish — publish draft
+/cancel — delete draft / discard article edits
+/delete <draft number> — delete specific draft
+/channels — show configured destination
+/setchannel <@name or ID> — set destination for future posts
+/unsetchannel — clear destination for future posts
+/help — show usage
 
-Preview, Category, and Tags are on the card. Undo doesn't revert edits or taxonomy.
-You can keep several drafts open: edit their source messages or use their cards.
-Reply to a draft's card/source to add text there. Unthreaded text goes to the last
-draft selected with /newpost, /resume, or Replace post. Replying also targets draft commands.
-Telegram deletions are not detected; use /remove.`
+Preview, Category, and Tags are on the card.
+Original message opens a quote; tap it to find the source.
+Save changes updates Git and linked channel messages.
+Reply to a card/source to append there; unthreaded text goes to the selected post.
+Drafts and article edits survive restarts separately.
+Undo doesn't revert edits, replacements, or taxonomy.
+Deleted sources: /remove <message ID>.`
 
 func (a *App) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	a.mu.Lock()
