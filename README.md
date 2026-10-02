@@ -1,75 +1,187 @@
 ![A blog draft being previewed in Telegram](docs/telegram-preview.jpg)
 
-Write and publish in your bot DM: **one message → Publish**.
+**Your bot DM.** Buttons look like <kbd>Preview</kbd>. Bot messages below are excerpts.
 
-1. **Write.** First line: title. Next paragraph: summary. The rest: Markdown body.
+**Draft → publish**
 
-   ```markdown
-   /newpost A useful trick
+<table>
+<tr><th>You send / tap</th><th>Bot · one card, updated in place</th></tr>
+<tr>
+<td>
+<pre>/newpost A useful trick&#10;&#10;A short summary.&#10;&#10;## The idea&#10;Keep it simple.&#10;&#10;Category: concept&#10;Tags: go</pre>
+</td>
+<td>
+<blockquote>
+<strong>A useful trick</strong><br>
+A short summary.
+<blockquote>## The idea<br>Keep it simple.</blockquote>
+<code>#1</code> · <em>concept · go</em>
+</blockquote>
+<kbd>Publish</kbd> <kbd>Preview</kbd> <kbd>Options</kbd><br>
+<kbd>Category</kbd> <kbd>Tags</kbd>
+</td>
+</tr>
+<tr>
+<td>Tap <kbd>Preview</kbd></td>
+<td>
+<blockquote>
+<h3>A useful trick</h3>
+A short summary.
+<h4>The idea</h4>
+Keep it simple.
+<hr>
+<code>#1</code><br>
+<strong>Category:</strong> concept<br>
+<strong>Tags:</strong> go
+</blockquote>
+<kbd>Publish</kbd> <kbd>Back</kbd> <kbd>Options</kbd><br>
+<kbd>Category</kbd> <kbd>Tags</kbd>
+</td>
+</tr>
+<tr>
+<td>Edit your original message:<br><code>Keep it simple.</code> → <code>Keep it readable.</code></td>
+<td>
+<blockquote>
+<h3>A useful trick</h3>
+A short summary.
+<h4>The idea</h4>
+Keep it readable.
+<hr>
+<code>#1</code><br>
+<strong>Category:</strong> concept<br>
+<strong>Tags:</strong> go
+</blockquote>
+<em>Same card. Preview stays on.</em>
+</td>
+</tr>
+<tr>
+<td>Tap <kbd>Publish</kbd><br>or send <code>/publish</code></td>
+<td>
+<blockquote>
+<strong>Live</strong> · <code>#269</code> · Today · 2026-10-02<br><br>
+<strong>A useful trick</strong><br>
+A short summary.<br><br>
+Committed to main<br>
+Destination · sent
+</blockquote>
+<kbd>Edit</kbd> <kbd>Preview</kbd> <kbd>Download</kbd>
+</td>
+</tr>
+</table>
 
-   A short summary of the post.
+One category, any tags. Existing names work without labels; label new names.
+`Tags: -` clears tags. Publishing assigns the article number/date and commits
+Markdown plus taxonomy, then posts to your configured destination.
 
-   ## The idea
-   Your Markdown content goes here.
+**Published article → edit → save**
 
-   Category: concept
-   Tags: code, my-new-tag
-   ```
+<table>
+<tr><th>You send / tap</th><th>Bot / chat change</th></tr>
+<tr>
+<td><code>/posts</code></td>
+<td>
+<blockquote>
+<strong>Live articles</strong> · <code>#269–#268</code><br><br>
+<strong>Today</strong><br><br>
+<code>#269</code> · 2026-10-02<br>
+<strong>A useful trick</strong><br><br>
+<strong>Earlier</strong><br><br>
+<code>#268</code> · 2024-07-25<br>
+<strong>An older post</strong>
+</blockquote>
+<kbd>Preview #269</kbd> <kbd>Edit #269</kbd><br>
+<kbd>Preview #268</kbd> <kbd>Edit #268</kbd><br>
+<kbd>Refresh</kbd>
+</td>
+</tr>
+<tr>
+<td>Tap <kbd>Edit #269</kbd><br>or send <code>/edit 269</code></td>
+<td>
+<blockquote>
+<strong>Editing live</strong> · <code>#269</code> · Today · 2026-10-02<br><br>
+<strong>A useful trick</strong><br>
+A short summary.
+<blockquote>## The idea<br>Keep it readable.</blockquote>
+<em>concept · go</em>
+</blockquote>
+<kbd>Save changes</kbd> <kbd>Preview</kbd> <kbd>Options</kbd><br>
+<kbd>Category</kbd> <kbd>Tags</kbd><br>
+<kbd>Original message</kbd> <kbd>Discard changes</kbd>
+</td>
+</tr>
+<tr>
+<td>
+Reply to the edit card:
+<pre>One more detail.&#10;&#10;Category: personal&#10;Tags: go, my-new-tag</pre>
+Then tap <kbd>Preview</kbd>.
+</td>
+<td>
+<blockquote>
+<h3>A useful trick</h3>
+A short summary.
+<h4>The idea</h4>
+Keep it readable.<br><br>
+One more detail.
+<hr>
+<strong>Editing live</strong> · <code>#269</code> · Today · 2026-10-02<br>
+<strong>Category:</strong> personal<br>
+<strong>Tags:</strong> go, my-new-tag*
+</blockquote>
+<kbd>Save changes</kbd> <kbd>Back</kbd> <kbd>Options</kbd><br>
+<kbd>Category</kbd> <kbd>Tags</kbd><br>
+<kbd>Discard changes</kbd>
+</td>
+</tr>
+<tr>
+<td>Tap <kbd>Save changes</kbd><br>or send <code>/save</code></td>
+<td>
+<blockquote>
+<strong>Live</strong> · <code>#269</code> · Today · 2026-10-02<br><br>
+<strong>A useful trick</strong><br>
+A short summary.<br><br>
+<strong>Status</strong> · Repository updated · channel updated
+</blockquote>
+<em>Same article number, date, and URL. Git and linked channel messages updated.</em>
+</td>
+</tr>
+<tr>
+<td>While editing: <kbd>Discard changes</kbd><br>or <code>/cancel</code></td>
+<td>Pending edits discarded; published version kept.</td>
+</tr>
+</table>
 
-   Or send `/newpost`, then the post. The optional final two lines set one
-   category and any tags; `Tags: -` means none. Existing names work without
-   labels. Label new names; `*` marks them in preview and is never saved.
+Publish/Save adds new names to taxonomy; `*` is never stored.
+Footer lines update selections, not body text. Single-line additions stay content.
+<kbd>Original message</kbd>, when available, opens a quote; tap it to find your source.
+Older articles remain editable. Drafts and pending edits survive restarts separately.
 
-2. **Edit.** Edit your source message or send additions. One card updates in
-   place. **Preview** renders content and taxonomy and stays enabled through
-   edits. **Category** and **Tags** change selections; **Options** has replacement,
-   download, undo, and cancellation.
+**More chat examples**
 
-3. **Keep multiple drafts.** `/newpost` starts another; `/drafts` lists them.
-   Reply to a card/source to append there. Unthreaded text goes to the selected
-   post. Source edits update their corresponding cards.
-
-4. **Publish.** **Publish** commits Markdown to `content/tweets/` and updates
-   taxonomy on `main`, then posts to the configured destination. Article number
-   and date are assigned at publication. Progress stays on the card.
-
-**Edit published articles**
-
-1. `/posts` → **Edit #number**, or `/edit 100`. The card shows **Editing live**,
-   **Today/Earlier**, and the original date. **Preview #number** only previews.
-2. **Original message**, when available, opens a quote; tap it to edit the source.
-   Reply to the edit card to append, or `/replace` to rewrite.
-3. Appended messages accept the same two-line taxonomy footer; it updates
-   selections and is removed from the body. Single-line additions stay content.
-4. **Save changes** or `/save` updates Git and linked channel messages.
-   **Number, date, and URL stay unchanged.** Missing channel associations are skipped.
-5. **Discard changes** or `/cancel` keeps the published version. `/edit <number>`
-   resumes pending edits; these stay separate from `/drafts`.
-
-Editing remains available indefinitely. Drafts, pending edits, and preview
-preferences survive restarts.
-
-Reply to the `/posts` list with a number to jump; your reply is deleted.
-**Refresh** reloads the range. Sending `/posts` again replaces the list.
-
-**Commands**
-
-| Command | Action |
+| You send / tap | Bot / chat change |
 | --- | --- |
-| `/taxonomy` | Copy grouped categories/tags; pin the updating list. |
-| `/resume <draft number>` | Resume a draft. |
-| `/replace` | Replace the whole post. |
-| `/download` | Download Markdown. |
-| `/undo` | Remove last appended text; keep its chat message. |
-| `/remove` · `/remove <message ID>` | Remove an addition by reply or ID. |
-| `/cancel` | Delete draft / discard article edits. |
-| `/delete <draft number>` | Delete a specific draft. |
-| `/channels` | Show configured destination. |
-| `/setchannel <@name or ID>` | Set channel/group for future posts. |
-| `/unsetchannel` | Clear destination for future posts. |
-| `/help` | Show usage. |
+| Reply to the `/posts` list: `268` | List jumps to `#268`; your reply disappears. |
+| <kbd>Refresh</kbd> / `/posts` again | Reload current range / replace list with newest articles. |
+| <kbd>Preview #268</kbd> → <kbd>Back</kbd> | Read article → return to list; no edit started. |
+| `/newpost` while draft `#1` has text | `#2`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Cancel draft</kbd><br><br>Draft `#1` stays saved; reply to either card to append there. |
+| `/drafts` | **Saved drafts** · `/resume <number>`<br>`1 · A useful trick`<br>`2 · Untitled` |
+| `/resume 1` | **A useful trick**<br>`#1` · *concept · go*<br><kbd>Publish</kbd> <kbd>Preview</kbd><br><br>Further unthreaded text goes here. |
+| `/replace` | `#1`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Keep current post</kbd> <kbd>Cancel draft</kbd><br><br>Send a valid replacement to update the card. |
+| `/download` | Markdown attachment: `269-a-useful-trick.md` |
+| `/undo` after appending `One more detail.` | Addition leaves the card; its chat message stays. |
+| Reply to that addition: `/remove` | Addition removed; source and command cleared where allowed. |
+| **Review** → <kbd>Source 1</kbd> → reply `/remove` | Open the failing source, then remove it. Deleted source: `/remove 42`. |
+| `/cancel` on draft `#1` / `/delete 2` | Delete the entire selected draft / delete draft `#2`. |
+| `/help` | Usage and command list. |
 
-Setting a destination requires bot admin access and your membership.
-**Review → Source** opens a quote; reply with `/remove` to drop the addition
-and clear its chat messages when Telegram permits. `/undo` leaves messages and
-doesn't revert edits, replacements, or taxonomy.
+**Taxonomy and destination**
+
+| You send | Bot |
+| --- | --- |
+| `/taxonomy` | **Categories**<br><br>**1.** `concept`<br>`go`<br><br>**2.** `personal`<br>`go` · `my-new-tag`<br><br>**Post footer**<br>`Category: concept`<br>`Tags: go` |
+| `/setchannel @my_blog` | Publishing destination set to My Blog. |
+| `/channels` | **Channels**<br>**My Blog** · @my_blog · `-1001234567890` |
+| `/unsetchannel` | Publishing destination cleared for future posts. |
+
+Pin `/taxonomy`; the bot updates that message as names change. Tag groups are
+hints, not restrictions. Setting a destination requires bot admin access and
+your membership; it applies to future publications.
