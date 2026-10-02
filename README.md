@@ -8,7 +8,7 @@
 <tr><th>You send / tap</th><th>Bot · one card, updated in place</th></tr>
 <tr>
 <td>
-<pre>/newpost A useful trick&#10;&#10;A short summary.&#10;&#10;## The idea&#10;Keep it simple.&#10;&#10;Category: concept&#10;Tags: go</pre>
+<pre>/newpost A useful trick&#10;&#10;A short summary.&#10;&#10;## The idea&#10;Keep it simple.&#10;&#10;concept&#10;go</pre>
 </td>
 <td>
 <blockquote>
