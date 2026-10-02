@@ -74,7 +74,9 @@ Draft and publish a post from your private chat with the bot: **one message, the
 
    `/posts` lists live articles from the repository under **Today** and **Earlier**,
    showing their original dates. Running it again replaces the previous list
-   with a new message. Tap **Edit #number**, use `/edit <number>`, or tap
+   with a new message. Tap **Preview #number** to view an article on the same
+   list message without starting an edit. **Back** returns to the list.
+   Tap **Edit #number**, use `/edit <number>`, or tap
    **Edit** on a published card. Pending changes resume on the same card and stay
    separate from `/drafts`.
 
@@ -103,11 +105,13 @@ Useful commands while writing:
   the same message updates when the available names change.
 - `/drafts` · `/resume <number>` — list saved drafts and select one.
 - `/posts` · `/edit <number>` · `/save` — browse and edit live articles.
-- `/preview` · `/download` — preview the active draft or get its Markdown file.
-- `/replace` · `/undo` — replace the whole post or remove the last body addition.
+- `/download` — get the post's Markdown file; use its **Preview** button to view it.
+- `/replace` — replace the whole post.
+- `/undo` — remove the last appended text; its chat message stays. Edits,
+  replacements, and taxonomy changes aren't undone.
 - `/cancel` — delete the entire active unfinished draft and remove its card.
-- `/delete <number>` — delete a specific unfinished draft; `/delete` uses the active
-  draft. Successful deletion gets a 👍 reaction or a brief confirmation.
+- `/delete <number>` — delete a specific unfinished draft. A number is required.
+  Successful deletion gets a 👍 reaction or a brief confirmation.
 - `/channels` — show the configured destination and its current permission status.
 - `/setchannel @name` — set or change the channel or group. Add the bot as an
   administrator with permission to post, and be a member yourself. Changes apply

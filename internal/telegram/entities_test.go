@@ -41,7 +41,7 @@ func TestReviewStatusIsCompactAndActionable(t *testing.T) {
 func TestForwardedEntitiesUpdateTheSamePreviewCard(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
-	h.send("/preview")
+	h.click("preview")
 	cardID := h.active().CardID
 	sends, deletes := h.api.count("sendMessage", false), h.api.count("deleteMessage", false)
 
@@ -85,7 +85,7 @@ func TestForwardedEntitiesUpdateTheSamePreviewCard(t *testing.T) {
 func TestRichMessagesAreReferencedAndCaptionsAreIgnored(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
-	h.send("/preview")
+	h.click("preview")
 	cardID := h.active().CardID
 
 	h.messageID++
@@ -128,7 +128,7 @@ func TestRichMessagesAreReferencedAndCaptionsAreIgnored(t *testing.T) {
 func TestRemoveCommandDropsRepliedOrDeletedSource(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
-	h.send("/preview")
+	h.click("preview")
 	cardID := h.active().CardID
 
 	h.messageID++
@@ -176,7 +176,7 @@ func TestRemoveErrorsStayOnTheDraftCard(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
 	rootID := h.messageID
-	h.send("/preview")
+	h.click("preview")
 	cardID := h.active().CardID
 	sends := h.api.count("sendMessage", false)
 

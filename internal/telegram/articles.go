@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -86,11 +87,10 @@ func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice str
 			text.WriteString(" · <b>Editing</b>")
 		}
 		fmt.Fprintf(&text, "\n<b>%s</b>", html.EscapeString(clip(d.Title, 85)))
-		if (i-start)%2 == 0 {
-			markup.InlineKeyboard = append(markup.InlineKeyboard, nil)
-		}
-		row := len(markup.InlineKeyboard) - 1
-		markup.InlineKeyboard[row] = append(markup.InlineKeyboard[row], models.InlineKeyboardButton{Text: fmt.Sprintf("Edit #%d", d.Number), CallbackData: fmt.Sprintf("article:%d", d.Number)})
+		markup.InlineKeyboard = append(markup.InlineKeyboard, []models.InlineKeyboardButton{
+			{Text: fmt.Sprintf("Preview #%d", d.Number), CallbackData: fmt.Sprintf("preview:%d", d.Number)},
+			{Text: fmt.Sprintf("Edit #%d", d.Number), CallbackData: fmt.Sprintf("article:%d", d.Number)},
+		})
 	}
 	if len(articles) == 0 {
 		text.Reset()
@@ -141,6 +141,54 @@ func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice str
 		a.deleteCard(ctx, b, int(id))
 	}
 	return a.Store.SetSetting(ctx, "posts_anchor", anchor)
+}
+
+func (a *App) previewArticle(ctx context.Context, b *bot.Bot, number int64) error {
+	if a.Repository == nil {
+		return a.articles(ctx, b, 0, "", false)
+	}
+	articles, err := a.liveArticles(ctx)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(articles, func(article post.Article) bool { return article.Number == number })
+	if i < 0 {
+		return a.articles(ctx, b, number, "", false)
+	}
+	d := articles[i].Draft
+	d.Categories, d.AvailableTags = []string{d.Category}, d.Tags
+	id, err := a.Store.Setting(ctx, "posts_message")
+	if err != nil {
+		return err
+	}
+	anchor, err := a.Store.Setting(ctx, "posts_anchor")
+	if err != nil {
+		return err
+	}
+	markup := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
+		{Text: fmt.Sprintf("Edit #%d", number), CallbackData: fmt.Sprintf("article:%d", number)},
+		{Text: "Back", CallbackData: fmt.Sprintf("posts:%d", anchor)},
+	}}}
+	markdown := previewMarkdown(d)
+	text := "<b>Live</b> · " + articleIdentity(d) + "\n\n" + overview(d)
+	if utf8.RuneCountInString(markdown) <= 32768 {
+		_, err = a.writeText(ctx, b, int(id), "", markup, &models.InputRichMessage{Markdown: markdown})
+		if err == nil || unchangedMessage(err) {
+			return nil
+		}
+		if !errors.Is(err, bot.ErrorBadRequest) || missingCard(err) {
+			return err
+		}
+		a.logError(b, "article preview", err)
+		text += "\n\n<i>Rich preview unavailable · Edit → Download gets the Markdown.</i>"
+	} else {
+		text += "\n\n<i>Excerpt · Edit → Download gets the full Markdown.</i>"
+	}
+	_, err = a.writeText(ctx, b, int(id), text, markup, nil)
+	if unchangedMessage(err) {
+		return nil
+	}
+	return err
 }
 
 func (a *App) articleListReply(ctx context.Context, b *bot.Bot, m *models.Message) (bool, error) {
@@ -226,11 +274,11 @@ func (a *App) discardChanges(ctx context.Context, b *bot.Bot, d *post.Draft, rel
 
 func (a *App) articleCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) (bool, error) {
 	kind, raw, _ := strings.Cut(q.Data, ":")
-	if kind != "posts" && kind != "article" {
+	if kind != "posts" && kind != "article" && kind != "preview" {
 		return false, nil
 	}
 	number, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || number < 0 || kind == "article" && number == 0 {
+	if err != nil || number < 0 || kind != "posts" && number == 0 {
 		return true, nil
 	}
 	_, err = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID})
@@ -243,6 +291,9 @@ func (a *App) articleCallback(ctx context.Context, b *bot.Bot, q *models.Callbac
 	}
 	if q.Message.Message == nil || int64(q.Message.Message.ID) != id {
 		return true, nil
+	}
+	if kind == "preview" {
+		return true, a.previewArticle(ctx, b, number)
 	}
 	if kind == "article" {
 		return true, a.editArticle(ctx, b, number)

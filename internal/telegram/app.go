@@ -54,7 +54,7 @@ Markdown body.
 
 /newpost — new draft (you can include the post after the command)
 Edit your original message to update the draft. More messages append to the body.
-The bot keeps one current card. Publish saves Markdown and posts to your destination.
+Each post has one card. Publish saves Markdown and posts to your destination.
 
 /taxonomy — copyable categories and tags (pin the list)
 Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
@@ -64,18 +64,17 @@ Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
 /edit <article number> — edit a live article; resume pending changes
 /save — save article changes, preserving its number, date, and URL
 /replace — replace the whole post in one message
-/undo — remove the last body addition
+/undo — remove the last appended text; keeps the chat message
 /remove — remove a source by reply or message ID
-/preview — rendered preview on the same card
 /download — download the Markdown file
 /publish — publish the active draft
 /cancel — delete the active draft, or discard pending article changes
-/delete <number> — delete a saved draft (/delete uses the active draft)
+/delete <number> — delete a specific saved draft
 /channels — show the active publishing destination
 /setchannel <@name or ID> · /unsetchannel
 /help — show this help
 
-Category and Tags are directly on each draft card. No Done step.
+Preview, Category, and Tags are on the card. Undo doesn't revert edits or taxonomy.
 You can keep several drafts open: edit their source messages or use their cards.
 Reply to a draft's card/source to add text there. Unthreaded text goes to the last
 draft selected with /newpost, /resume, or Replace post. Replying also targets draft commands.
@@ -229,7 +228,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			}
 			return a.render(ctx, b, &d)
 		case "/cancel", "/delete":
-			if len(fields) > 2 || command == "/cancel" && len(fields) != 1 {
+			if command == "/cancel" && len(fields) != 1 || command == "/delete" && len(fields) != 2 {
 				return a.reply(ctx, b, "Use /cancel for the active draft or /delete <draft number>.", nil)
 			}
 			id, err := a.Store.Setting(ctx, "active")
@@ -257,9 +256,6 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				id = d.ID
 			}
 			if id == 0 {
-				if command == "/delete" {
-					return a.reply(ctx, b, "No active draft. Use /delete <number> from /drafts.", nil)
-				}
 				return nil
 			}
 			if command == "/cancel" {
@@ -364,15 +360,12 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				return err
 			}
 			return a.reply(ctx, b, "Publishing destination cleared for future posts.", nil)
-		case "/preview", "/publish", "/save", "/replace", "/undo", "/download", "/done":
+		case "/publish", "/save", "/replace", "/undo", "/download":
 			d, err := a.target(ctx, b, m)
 			if err != nil || d.ID == 0 {
 				return err
 			}
 			action := strings.TrimPrefix(command, "/")
-			if action == "done" {
-				action = "back"
-			} // compatibility; composition has no Done step
 			return a.action(ctx, b, &d, action)
 		default:
 			// Leading slash can also be Markdown/body text. Only unknown bot commands

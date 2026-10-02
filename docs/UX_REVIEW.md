@@ -96,7 +96,7 @@ messages with unrecorded IDs cannot be discovered or swept through the Bot API.
 
 The owner's clarification supersedes the earlier pause behavior: **Cancel draft**
 and `/cancel` delete the active unfinished draft and remove its card. `/delete <id>`
-deletes a chosen saved draft; `/delete` uses the active draft. Both operations
+deletes a chosen saved draft and requires its number. Both operations
 are immediate. Deleted drafts cannot be resumed. Starting another draft keeps
 existing drafts that contain text; repeating `/newpost` reuses an empty draft.
 In replacement mode, **Keep current post** abandons only that replacement.

@@ -20,10 +20,9 @@ func (a *App) RegisterMenu(ctx context.Context, b *bot.Bot) error {
 			{Command: "posts", Description: "Browse live articles"},
 			{Command: "edit", Description: "Edit a live article: /edit <number>"},
 			{Command: "save", Description: "Save changes to the live article"},
-			{Command: "preview", Description: "Preview the active draft"},
 			{Command: "publish", Description: "Save Markdown and publish"},
 			{Command: "replace", Description: "Replace the post in one message"},
-			{Command: "undo", Description: "Undo the last body addition"},
+			{Command: "undo", Description: "Remove the last appended text; keeps the chat message"},
 			{Command: "remove", Description: "Remove a source: reply or message ID"},
 			{Command: "download", Description: "Download the Markdown file"},
 			{Command: "cancel", Description: "Cancel a draft or discard article changes"},
@@ -32,7 +31,6 @@ func (a *App) RegisterMenu(ctx context.Context, b *bot.Bot) error {
 			{Command: "setchannel", Description: "Set destination: /setchannel @name or ID"},
 			{Command: "unsetchannel", Description: "Clear the publishing destination"},
 			{Command: "help", Description: "Show help and commands"},
-			{Command: "start", Description: "Show help and refresh the command menu"},
 		},
 	})
 	if err != nil {

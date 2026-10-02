@@ -62,14 +62,21 @@ func draftKeyboard(d post.Draft, preview bool) *models.InlineKeyboardMarkup {
 }
 
 func previewMarkdown(d post.Draft) string {
+	if d.Number != 0 && d.Revision == nil {
+		d.Categories, d.AvailableTags = []string{d.Category}, d.Tags
+	}
 	tags := strings.Join(d.TagLabels(), ", ")
 	if tags == "" {
 		tags = "none"
 	}
 	escape := func(text string) string { return bot.EscapeMarkdown(html.EscapeString(text)) }
 	identity := fmt.Sprintf("`#%d`", d.Slot)
-	if d.Revision != nil {
-		identity = fmt.Sprintf("**Editing live** · `#%d` · %s · %s", d.Number, articleAge(d), d.PublishedAt.Format("2006-01-02"))
+	if d.Number != 0 {
+		label := "Live"
+		if d.Revision != nil {
+			label = "Editing live"
+		}
+		identity = fmt.Sprintf("**%s** · `#%d` · %s · %s", label, d.Number, articleAge(d), d.PublishedAt.Format("2006-01-02"))
 	}
 	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n%s\n\n**Category:** %s\n\n**Tags:** %s", identity, escape(d.CategoryLabel()), escape(tags)) + messageIssuesMarkdown(d.MessageIssues) + statusMarkdown(d.Notice)
 }
@@ -124,6 +131,9 @@ func overview(d post.Draft) string {
 }
 
 func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
+	if d.Number != 0 && d.Revision == nil {
+		d.Categories, d.AvailableTags = []string{d.Category}, d.Tags
+	}
 	text := overview(d)
 	markup := draftKeyboard(d, false)
 	switch {
@@ -160,9 +170,14 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 			}
 		}
 		text = fmt.Sprintf("<b>Live</b> · %s\n\n<b>%s</b>\n%s\n\n%s", articleIdentity(d), html.EscapeString(d.Title), html.EscapeString(clip(d.Summary, 400)), status)
-		markup = keyboard(d, "Download", "download")
+		label, action := "Preview", "preview"
+		if d.View == "preview" {
+			label, action = "Back", "back"
+			text = "<b>Live</b> · " + articleIdentity(d) + "\n\n" + overview(d)
+		}
+		markup = keyboard(d, label, action, "Download", "download")
 		if d.Portfolio && d.Exported && (d.ChannelID == 0 || d.Delivery == "sent") {
-			markup = keyboard(d, "Edit", "edit", "Download", "download")
+			markup = keyboard(d, "Edit", "edit", label, action, "Download", "download")
 		}
 		if !d.Exported || d.ChannelID != 0 && d.Delivery != "sent" {
 			markup = keyboard(d, "Continue publishing", "publish", "Download", "download")
@@ -200,7 +215,7 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 		markup = keyboard(d, "Category", "categories-0", "Tags", "tags-0")
 		addRow(markup, d, "Replace post", "replace", "Download", "download")
 		if len(d.Sources) > 0 && !d.Sources[len(d.Sources)-1].Full {
-			addRow(markup, d, "Undo last addition", "undo")
+			addRow(markup, d, "Remove last text addition", "undo")
 		}
 		addRow(markup, d, "Back", "back", "Cancel draft", "cancel")
 		if d.Revision != nil {
@@ -345,7 +360,8 @@ func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 	}
 	text, markup := card(*d)
 	var rich *models.InputRichMessage
-	if d.View == "preview" && d.Invalid == "" && !tooLong && !d.Locked() {
+	live := d.Number != 0 && d.Revision == nil && d.Exported && (d.ChannelID == 0 || d.Delivery == "sent")
+	if d.View == "preview" && d.Invalid == "" && !tooLong && (!d.Locked() || live) {
 		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d)}
 	}
 	err := a.writeCard(ctx, b, d, text, markup, rich)
@@ -369,27 +385,19 @@ func missingCard(err error) bool {
 }
 
 func (a *App) writeCard(ctx context.Context, b *bot.Bot, d *post.Draft, text string, markup *models.InlineKeyboardMarkup, rich *models.InputRichMessage) error {
-	disablePreview := true
+	write := func(id int) (*models.Message, error) {
+		return a.writeText(ctx, b, id, text, markup, rich)
+	}
 	if d.CardID != 0 {
-		params := &bot.EditMessageTextParams{ChatID: a.OwnerID, MessageID: d.CardID, Text: text, ParseMode: models.ParseModeHTML, ReplyMarkup: markup, LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disablePreview}}
-		if rich != nil {
-			params.Text, params.ParseMode, params.RichMessage = "", "", rich
-		}
-		_, err := b.EditMessageText(ctx, params)
-		if err == nil || errors.Is(err, bot.ErrorBadRequest) && strings.Contains(strings.ToLower(err.Error()), "message is not modified") {
+		_, err := write(d.CardID)
+		if err == nil || unchangedMessage(err) {
 			return nil
 		}
 		if !missingCard(err) {
 			return err
 		}
 	}
-	var message *models.Message
-	var err error
-	if rich != nil {
-		message, err = b.SendRichMessage(ctx, &bot.SendRichMessageParams{ChatID: a.OwnerID, RichMessage: *rich, ReplyMarkup: markup, DisableNotification: true})
-	} else {
-		message, err = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: a.OwnerID, Text: text, ParseMode: models.ParseModeHTML, ReplyMarkup: markup, DisableNotification: true, LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disablePreview}})
-	}
+	message, err := write(0)
 	if err != nil {
 		return err
 	}

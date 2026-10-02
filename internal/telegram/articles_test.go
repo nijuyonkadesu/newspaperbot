@@ -287,6 +287,104 @@ func TestArticleListPaginationEditsSameMessageAndSelectsArticle(t *testing.T) {
 	}
 }
 
+func TestArticlePreviewKeepsTheListAndActiveDraftSeparate(t *testing.T) {
+	h := newHarness(t)
+	h.app.Repository = &fakeRepository{entries: []post.Article{exampleArticle(t, 268, time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC))}}
+	draft := h.ready("Draft body")
+	h.send("/posts")
+	listID, _ := h.app.Store.Setting(context.Background(), "posts_message")
+	h.replyTo(int(listID), "268")
+	sent := h.api.count("sendMessage", false)
+	h.clickPosts("Preview #268")
+	h.api.mu.Lock()
+	preview := h.api.messages[int(listID)]
+	h.api.mu.Unlock()
+	if preview.RichMarkdown == "" || !strings.Contains(preview.RichMarkdown, "**Live** · `#268`") || strings.Contains(preview.RichMarkdown, "Editing live") || strings.Contains(preview.RichMarkdown, "\\*") || !strings.Contains(preview.RichMarkdown, "**Category:** concept") || !strings.Contains(preview.RichMarkdown, "**Tags:** go") {
+		t.Fatal("article preview lost identity or showed draft/edit metadata", preview.RichMarkdown)
+	}
+	if revisions, err := h.app.Store.Revisions(context.Background()); err != nil || len(revisions) != 0 || h.active().ID != draft.ID || h.api.count("sendMessage", false) != sent {
+		t.Fatal("preview opened a revision, changed selection, or sent another message", err)
+	}
+	h.send("Still drafting")
+	if d := h.active(); d.ID != draft.ID || d.Content != "Draft body\n\nStill drafting" {
+		t.Fatal("article preview hijacked unthreaded text")
+	}
+	h.clickPosts("Back")
+	h.api.mu.Lock()
+	list := h.api.messages[int(listID)]
+	h.api.mu.Unlock()
+	if list.RichMarkdown != "" || !strings.Contains(list.Text, "<code>#268–#268</code>") || h.api.count("sendMessage", false) != sent {
+		t.Fatal("Back did not restore the selected range on the same message")
+	}
+	h.clickPosts("Preview #268")
+	h.clickPosts("Edit #268")
+	h.click("preview")
+	if d := h.active(); d.Revision == nil || d.Number != 268 || !d.Preview || h.draft(draft.ID).Content != "Draft body\n\nStill drafting" {
+		t.Fatal("Edit did not open a distinct revision with its own Preview button")
+	}
+}
+
+func TestArticlePreviewFallbackRetainsControls(t *testing.T) {
+	for _, tc := range []struct {
+		name, content, notice, editError string
+		reject                           bool
+	}{
+		{"rendering rejected", "**Body**", "Rich preview unavailable", "", true},
+		{"rich API unavailable", "**Body**", "Rich preview unavailable", "Bad Request: message text is empty", false},
+		{"too long", strings.Repeat("x", 32769), "Excerpt", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			article := exampleArticle(t, 268, time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC))
+			article.Content = tc.content
+			h.app.Repository = &fakeRepository{entries: []post.Article{article}}
+			h.send("/posts")
+			listID, _ := h.app.Store.Setting(context.Background(), "posts_message")
+			h.api.mu.Lock()
+			h.api.richRejected = tc.reject
+			h.api.editError = tc.editError
+			h.api.mu.Unlock()
+			h.clickPosts("Preview #268")
+			h.api.mu.Lock()
+			preview := h.api.messages[int(listID)]
+			h.api.mu.Unlock()
+			if preview.RichMarkdown != "" || preview.ParseMode != "HTML" || !strings.Contains(preview.Text, tc.notice) || !strings.Contains(preview.Text, "<b>Live</b>") || len(h.api.live()) != 1 {
+				t.Fatal("rejected rich preview hid the failure or lost its message")
+			}
+			if revisions, err := h.app.Store.Revisions(context.Background()); err != nil || len(revisions) != 0 {
+				t.Fatal("fallback opened an editing session", err)
+			}
+			h.clickPosts("Back")
+		})
+	}
+}
+
+func TestPublishedCardPreviewDoesNotStartAnEdit(t *testing.T) {
+	h := newHarness(t)
+	h.app.Repository = &fakeRepository{}
+	live := h.ready("Published body")
+	h.click("publish")
+	h.finishGit()
+	draft := h.ready("Separate draft")
+	h.clickDraft(live.ID, "preview")
+	d := h.draft(live.ID)
+	h.api.mu.Lock()
+	preview := h.api.messages[d.CardID].RichMarkdown
+	h.api.mu.Unlock()
+	if d.Revision != nil || !d.Preview || d.CardID != live.CardID || h.active().ID != draft.ID || preview != previewMarkdown(d) || !strings.Contains(preview, "**Live**") || strings.Contains(preview, "Editing live") {
+		t.Fatal("published preview started an edit or crossed into another draft", preview)
+	}
+	h.clickDraft(live.ID, "back")
+	if d := h.draft(live.ID); d.Preview || d.View != "" || d.Revision != nil {
+		t.Fatal("Back did not return to the published card")
+	}
+	h.clickDraft(live.ID, "edit")
+	h.click("preview")
+	if d := h.active(); d.Revision == nil || !d.Preview {
+		t.Fatal("published article lost its edit Preview button")
+	}
+}
+
 func TestArticleListRepliesReuseMessageAndCleanUp(t *testing.T) {
 	h := newHarness(t)
 	r := &fakeRepository{}

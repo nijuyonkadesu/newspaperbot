@@ -28,6 +28,7 @@ type apiCall struct {
 	MessageID, ResultID                     int
 	Text, RichMarkdown, Document, ParseMode string
 	Markup                                  models.InlineKeyboardMarkup
+	Commands                                []models.BotCommand
 	Reaction                                []models.ReactionType
 	ReplyParameters                         *models.ReplyParameters
 	DisableNotification                     bool
@@ -46,6 +47,7 @@ type fakeAPI struct {
 	replyError       string
 	deleteRejected   bool
 	richRejected     bool
+	richUnavailable  bool
 	reactionRejected bool
 }
 
@@ -87,6 +89,12 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw := r.FormValue("reply_markup"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &call.Markup)
+	}
+	if raw := r.FormValue("commands"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &call.Commands); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
 	}
 	if raw := r.FormValue("reaction"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &call.Reaction); err != nil {
@@ -149,6 +157,14 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if f.richRejected && call.ChatID > 0 && call.RichMarkdown != "" {
 		reject(400, "can't parse rich Markdown")
+		return
+	}
+	if f.richUnavailable && call.RichMarkdown != "" {
+		if call.Method == "sendRichMessage" {
+			reject(404, "method not found")
+		} else {
+			reject(400, "message text is empty")
+		}
 		return
 	}
 	var result any
@@ -385,7 +401,7 @@ func TestLocalPublishAndPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := h.ready("# Heading\n\n**bold** and `code`")
-	h.send("/preview")
+	h.click("preview")
 	calls := h.api.snapshot()
 	if calls[len(calls)-1].RichMarkdown != previewMarkdown(d) {
 		t.Fatal("preview did not pass Markdown to Telegram")
@@ -522,7 +538,7 @@ func TestDocumentFallbackResumesAfterConfirmedSummary(t *testing.T) {
 func TestLongContentAndExportFailure(t *testing.T) {
 	h := newHarness(t)
 	d := h.ready(strings.Repeat("x", 32769))
-	h.send("/preview")
+	h.click("preview")
 	if h.api.count("sendRichMessage", false) != 0 || h.api.count("sendDocument", false) != 0 {
 		t.Fatal("long preview added an unsolicited attachment")
 	}

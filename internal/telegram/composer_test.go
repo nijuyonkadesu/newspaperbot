@@ -176,10 +176,11 @@ func TestMissingCardRecoveryAndStableUpdates(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
 	oldID := h.active().CardID
+	preview := keyboard(h.active(), "Preview", "preview").InlineKeyboard[0][0].CallbackData
 	h.api.mu.Lock()
 	delete(h.api.messages, oldID)
 	h.api.mu.Unlock()
-	h.send("/preview")
+	h.callback(preview)
 	if h.active().CardID == oldID || len(h.api.live()) != 1 {
 		t.Fatal("deleted card was not recreated exactly once")
 	}
@@ -207,7 +208,7 @@ func TestRenderedPreviewFallbackKeepsOneCard(t *testing.T) {
 	h.api.mu.Lock()
 	h.api.richRejected = true
 	h.api.mu.Unlock()
-	h.send("/preview")
+	h.click("preview")
 	if h.active().CardID != cardID || len(h.api.live()) != 1 || h.api.count("sendDocument", false) != 0 || !strings.Contains(h.active().Notice, "/download") {
 		t.Fatal("render rejection added noise or lost its source")
 	}
@@ -502,8 +503,8 @@ func TestDeleteByNumberKeepsOtherDraftActive(t *testing.T) {
 		t.Fatal("missing draft did not provide feedback or incorrectly reacted as success")
 	}
 	h.send("/delete")
-	if len(h.api.live()) != 1 {
-		t.Fatal("delete without ID did not discard the active draft")
+	if h.active().ID != active.ID || len(h.api.live()) != 3 || h.api.count("setMessageReaction", false) != 1 {
+		t.Fatal("delete without a number removed a draft or reported success")
 	}
 }
 
@@ -574,12 +575,59 @@ func TestDeleteReactionAndFallback(t *testing.T) {
 	}
 }
 
-func TestDeleteWithoutActiveDraftProvidesFeedback(t *testing.T) {
+func TestDeleteWithoutNumberProvidesUsage(t *testing.T) {
 	h := newHarness(t)
 	h.send("/delete")
 	live := h.api.live()
-	if len(live) != 1 || !strings.Contains(live[0].Text, "No active draft") || h.api.count("setMessageReaction", false) != 0 {
-		t.Fatal("delete without an active draft was silent or reported success")
+	if len(live) != 1 || !strings.Contains(live[0].Text, "/delete <draft number>") || h.api.count("setMessageReaction", false) != 0 {
+		t.Fatal("delete without a number was silent or reported success")
+	}
+}
+
+func TestRemovedCommandsDoNotChangeTheDraft(t *testing.T) {
+	h := newHarness(t)
+	h.ready("Body")
+	h.click("preview")
+	before := h.active()
+	for _, command := range []string{"/done", "/preview"} {
+		h.messageID++
+		h.app.Handle(context.Background(), h.bot, &models.Update{Message: &models.Message{
+			ID: h.messageID, From: &models.User{ID: 42}, Chat: models.Chat{ID: 42, Type: models.ChatTypePrivate}, Text: command,
+			Entities: []models.MessageEntity{{Type: models.MessageEntityTypeBotCommand, Offset: 0, Length: len(command)}},
+		}})
+		d := h.active()
+		calls := h.api.snapshot()
+		if d.Content != before.Content || d.View != before.View || d.CardID != before.CardID || d.LastMessageID != before.LastMessageID || calls[len(calls)-1].Text != "Unknown command. Use /help." {
+			t.Fatal("removed command changed a draft or still invoked its old action", command)
+		}
+	}
+}
+
+func TestCommandMenuOmitsRedundantActionsAndStartStillWorks(t *testing.T) {
+	h := newHarness(t)
+	h.send("/start")
+	if h.api.count("setMyCommands", false) != 1 || h.api.count("setChatMenuButton", false) != 1 {
+		t.Fatal("hidden /start no longer initializes the menu")
+	}
+	for _, call := range h.api.snapshot() {
+		if call.Method != "setMyCommands" {
+			continue
+		}
+		foundUndo := false
+		for _, command := range call.Commands {
+			if command.Command == "done" || command.Command == "preview" || command.Command == "start" {
+				t.Fatal("menu still advertises a removed or redundant action", command.Command)
+			}
+			if command.Command == "undo" {
+				foundUndo = true
+				if !strings.Contains(command.Description, "appended text") || !strings.Contains(command.Description, "keeps the chat message") {
+					t.Fatal("Undo is described as a general rollback")
+				}
+			}
+		}
+		if !foundUndo {
+			t.Fatal("Undo shortcut disappeared")
+		}
 	}
 }
 
