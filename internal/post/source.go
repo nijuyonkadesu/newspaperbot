@@ -16,13 +16,18 @@ type parsedSource struct {
 // A footer is opt-in: paired labels, or two final lines that both match the
 // catalog. Never interpret the contents of an unclosed fenced code block.
 func parseSource(text string, categories, availableTags []string) (parsedSource, error) {
-	var p parsedSource
-	var err error
-	p.title, p.summary, p.body, err = ParseSource(text)
+	title, summary, body, err := ParseSource(text)
 	if err != nil {
-		return p, err
+		return parsedSource{}, err
 	}
-	body := strings.TrimRight(p.body, "\r\n")
+	p, err := parseFooter(body, categories, availableTags)
+	p.title, p.summary = title, summary
+	return p, err
+}
+
+func parseFooter(text string, categories, availableTags []string) (parsedSource, error) {
+	p := parsedSource{body: text}
+	body := strings.TrimRight(text, "\r\n")
 	last := strings.LastIndex(body, "\n")
 	if last < 0 {
 		return p, nil
@@ -121,5 +126,8 @@ func (p parsedSource) applyTaxonomy(d *Draft, source *Source) {
 	d.Category, d.Tags = p.category, p.tags
 	// Keep metadata out of the saved body source. Appends must not reapply an
 	// old footer over subsequent category/tag selections made on the card.
-	source.Text = p.title + "\n\n" + p.summary + "\n\n" + p.body
+	source.Text = p.body
+	if source.Full {
+		source.Text = p.title + "\n\n" + p.summary + "\n\n" + p.body
+	}
 }

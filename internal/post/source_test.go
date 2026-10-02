@@ -99,3 +99,87 @@ func TestCatalogChangesDoNotReinterpretExistingBodyOnAppend(t *testing.T) {
 		t.Fatal("catalog refresh silently reinterpreted existing body")
 	}
 }
+
+func TestAppendedTaxonomyFooters(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, body, category, tags string
+	}{
+		{"labelled", "Addition\n\nCategory: personal\nTags: go, sqlite, go", "Addition", "personal", "go,sqlite"},
+		{"bare", "Addition\npersonal\ngo", "Addition", "personal", "go"},
+		{"new values", "Addition\nCategory: research\nTags: new-tag", "Addition", "research", "new-tag"},
+		{"no tags", "Addition\nCategory: personal\nTags: -", "Addition", "personal", ""},
+		{"crlf", "Addition\r\nCategory: personal\r\nTags: sqlite\r\n", "Addition", "personal", "sqlite"},
+		{"unknown prose", "Addition\npersonal\nunknown", "Addition\npersonal\nunknown", "development", ""},
+		{"code", "```text\nCategory: personal\nTags: go", "```text\nCategory: personal\nTags: go", "development", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := taxonomyDraft()
+			if err := d.Replace(Source{MessageID: 1, Text: "Title\n\nSummary\n\nBody"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.Append(Source{MessageID: 2, Text: tc.text}); err != nil {
+				t.Fatal(err)
+			}
+			if d.Title != "Title" || d.Summary != "Summary" || d.Content != "Body\n\n"+tc.body || d.Category != tc.category || strings.Join(d.Tags, ",") != tc.tags {
+				t.Fatalf("addition lost body or metadata: %+v", d)
+			}
+			if d.Sources[1].Full || d.Sources[1].Text != tc.body {
+				t.Fatal("addition was treated as a whole post or retained its footer")
+			}
+		})
+	}
+}
+
+func TestAppendedFooterEditAndRepair(t *testing.T) {
+	d := taxonomyDraft()
+	_ = d.Replace(Source{MessageID: 1, Text: "Title\n\nSummary\n\nBody"})
+	if err := d.Append(Source{MessageID: 2, UpdateID: 1, Text: "Addition\nCategory: personal\nTags: invalid tag"}); err == nil {
+		t.Fatal("invalid appended footer was accepted")
+	}
+	if d.Validate() == nil || d.Content != "Body" || d.Category != "development" || len(d.Sources) != 2 {
+		t.Fatal("invalid addition was lost or partially applied")
+	}
+	_ = d.Append(Source{MessageID: 3, UpdateID: 2, Text: "More"})
+	if d.Validate() == nil {
+		t.Fatal("later addition cleared an invalid source")
+	}
+	d.EditSource(Source{MessageID: 2, UpdateID: 3, Text: "Fixed addition\nCategory: personal\nTags: sqlite"})
+	if d.Validate() != nil || d.Content != "Body\n\nFixed addition\n\nMore" || d.Category != "personal" || strings.Join(d.Tags, ",") != "sqlite" {
+		t.Fatal("edited addition did not repair its body and metadata")
+	}
+	d.EditSource(Source{MessageID: 2, UpdateID: 4, Text: "Invalid edit\nCategory: personal\nTags:"})
+	if d.Validate() == nil || d.Content != "Body\n\nFixed addition\n\nMore" {
+		t.Fatal("invalid edit overwrote the last valid body")
+	}
+	d.EditSource(Source{MessageID: 2, UpdateID: 5, Text: "Fixed again\npersonal\ngo"})
+	d.Category, d.Tags = "development", nil // Subsequent card selections win.
+	d.EditSource(Source{MessageID: 3, UpdateID: 6, Text: "More revised"})
+	if d.Validate() != nil || d.Content != "Body\n\nFixed again\n\nMore revised" || d.Category != "development" || len(d.Tags) != 0 {
+		t.Fatal("rebuilding reinterpreted an older addition's footer")
+	}
+}
+
+func TestSingleLineContentIsNeverTaxonomy(t *testing.T) {
+	for _, line := range []string{"personal", "go", "Category: personal", "Tags: go"} {
+		t.Run(line, func(t *testing.T) {
+			d := taxonomyDraft()
+			if err := d.Replace(Source{MessageID: 1, UpdateID: 1, Text: "Title\n\nSummary\n\n" + line}); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.Append(Source{MessageID: 2, UpdateID: 2, Text: line}); err != nil {
+				t.Fatal(err)
+			}
+			if d.Content != line+"\n\n"+line || d.Category != "development" || len(d.Tags) != 0 {
+				t.Fatal("single-line body/addition was mistaken for a footer")
+			}
+			d.Number, d.Revision = 268, &Revision{}
+			d.EditSource(Source{MessageID: 2, UpdateID: 3, Text: "personal"})
+			if err := d.Append(Source{MessageID: 3, UpdateID: 4, Text: "go"}); err != nil {
+				t.Fatal(err)
+			}
+			if d.Content != line+"\n\npersonal\n\ngo" || d.Category != "development" || len(d.Tags) != 0 {
+				t.Fatal("separate single-line messages formed a footer in a live revision")
+			}
+		})
+	}
+}

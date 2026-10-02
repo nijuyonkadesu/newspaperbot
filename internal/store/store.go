@@ -140,7 +140,19 @@ func (s *Store) SaveCard(ctx context.Context, d *post.Draft) error {
 }
 
 func (s *Store) List(ctx context.Context) ([]post.Draft, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,slot,data FROM drafts WHERE slot IS NOT NULL ORDER BY slot")
+	return s.list(ctx, "slot IS NOT NULL ORDER BY slot")
+}
+
+func (s *Store) Cards(ctx context.Context) ([]post.Draft, error) {
+	return s.list(ctx, "slot IS NOT NULL OR json_extract(data,'$.Revision') IS NOT NULL ORDER BY id")
+}
+
+func (s *Store) Revisions(ctx context.Context) ([]post.Draft, error) {
+	return s.list(ctx, "json_extract(data,'$.Revision') IS NOT NULL ORDER BY number DESC")
+}
+
+func (s *Store) list(ctx context.Context, selection string) ([]post.Draft, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id,slot,data FROM drafts WHERE "+selection)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +162,7 @@ func (s *Store) List(ctx context.Context) ([]post.Draft, error) {
 		var d post.Draft
 		var data []byte
 		var id int64
-		var slot int64
+		var slot sql.NullInt64
 		if err := rows.Scan(&id, &slot, &data); err != nil {
 			return nil, err
 		}
@@ -158,7 +170,7 @@ func (s *Store) List(ctx context.Context) ([]post.Draft, error) {
 			return nil, err
 		}
 		d.ID = id
-		d.Slot = slot
+		d.Slot = slot.Int64
 		d.Normalize()
 		drafts = append(drafts, d)
 	}
@@ -202,7 +214,7 @@ func (s *Store) Delete(ctx context.Context, id int64) (post.Draft, error) {
 	if err != nil {
 		return d, err
 	}
-	if d.Locked() {
+	if d.Number != 0 || d.Locked() {
 		return d, ErrPublicationLocked
 	}
 	result, err := tx.ExecContext(ctx, "DELETE FROM drafts WHERE id=? AND COALESCE(number,0)=0", id)
@@ -269,13 +281,14 @@ func (s *Store) Reserve(ctx context.Context, id, minimum, channel int64, dir str
 	return d, tx.Commit()
 }
 
-// FromMessage resolves a source message or current card to its own draft.
+// FromMessage resolves a source, its native reply, or a card to its own draft.
 func (s *Store) FromMessage(ctx context.Context, messageID int) (post.Draft, error) {
 	return decode(s.db.QueryRowContext(ctx, `SELECT id,slot,data FROM drafts WHERE EXISTS
  (SELECT 1 FROM json_each(drafts.data, '$.Sources') WHERE json_extract(value, '$.MessageID') = ?)
 	OR EXISTS (SELECT 1 FROM json_each(drafts.data, '$.MessageIssues') WHERE json_extract(value, '$.MessageID') = ?)
  OR json_extract(data, '$.ReplacementSource.MessageID') = ?
-	OR json_extract(data, '$.CardID') = ?`, messageID, messageID, messageID, messageID))
+	OR json_extract(data, '$.SourceReplyID') = ?
+	OR json_extract(data, '$.CardID') = ?`, messageID, messageID, messageID, messageID, messageID))
 }
 
 func prepareDraftSlots(db *sql.DB) error {

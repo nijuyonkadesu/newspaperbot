@@ -22,7 +22,7 @@ type Source struct {
 	EditDate   int
 	Text       string
 	Full       bool
-	ParseError string // Invalid full-message edit; do not publish the previous snapshot.
+	ParseError string // Invalid post or taxonomy; do not publish the previous snapshot.
 }
 
 type MessageIssue struct {
@@ -32,12 +32,22 @@ type MessageIssue struct {
 	Reason    string
 }
 
+// Revision keeps the live source separate from pending changes and checkpoints
+// channel edits after Git succeeds. It never occupies a draft slot.
+type Revision struct {
+	Original                                    string
+	Applied, Conflict, SummaryDone, ContentDone bool
+	Missing                                     bool
+}
+
 // Draft also holds publication progress so interrupted exports can be recovered.
 type Draft struct {
 	ID                int64 // Stable database identity; never shown to the owner.
 	Slot              int64 `json:"-"` // Reusable owner-facing number while this is a draft.
 	ComposerVersion   int
 	CardID            int
+	SourceReplyID     int // Temporary native reply used to locate a source message.
+	SourceReplyToID   int
 	View              string
 	Preview           bool // Preferred review mode, retained while temporary panels are open.
 	Notice            string
@@ -74,6 +84,8 @@ type Draft struct {
 	CommitSHA        string
 	Slug             string
 	Portfolio        bool
+	Frontmatter      string // Existing article fields, including metadata unknown to the bot.
+	Revision         *Revision
 }
 
 // Telegram can randomize update IDs after a week without updates. Edit dates
@@ -177,6 +189,12 @@ func (d *Draft) Append(source Source) error {
 	if strings.TrimSpace(source.Text) == "" {
 		return errors.New("send text to append to the body")
 	}
+	parsed, err := parseFooter(source.Text, d.Categories, d.AvailableTags)
+	if err != nil {
+		source.ParseError = err.Error()
+	} else {
+		parsed.applyTaxonomy(d, &source)
+	}
 	if len(d.Sources) == 0 {
 		d.BaseContent = d.Content
 	}
@@ -196,13 +214,17 @@ func (d *Draft) EditSource(source Source) bool {
 			return false
 		}
 		source.Full = old.Full
+		var parsed parsedSource
+		var err error
 		if source.Full {
-			parsed, err := parseSource(source.Text, d.Categories, d.AvailableTags)
-			if err != nil {
-				source.ParseError = err.Error()
-			} else {
-				parsed.applyTaxonomy(d, &source)
-			}
+			parsed, err = parseSource(source.Text, d.Categories, d.AvailableTags)
+		} else {
+			parsed, err = parseFooter(source.Text, d.Categories, d.AvailableTags)
+		}
+		if err != nil {
+			source.ParseError = err.Error()
+		} else {
+			parsed.applyTaxonomy(d, &source)
 		}
 		d.Sources[i] = source
 		_ = d.rebuild() // Invalid source is retained; the last valid post is preserved.
@@ -262,13 +284,13 @@ func (d *Draft) rebuild() error {
 	d.Notice = ""
 	title, summary, body := d.Title, d.Summary, d.BaseContent
 	for _, source := range d.Sources {
+		if source.ParseError != "" {
+			d.Invalid = "Fix the source message: " + source.ParseError
+			return errors.New(source.ParseError)
+		}
 		if source.Full {
 			var err error
-			if source.ParseError != "" {
-				err = errors.New(source.ParseError)
-			} else {
-				title, summary, body, err = ParseSource(source.Text)
-			}
+			title, summary, body, err = ParseSource(source.Text)
 			if err != nil {
 				d.Invalid = "Fix the edited post message: " + err.Error()
 				return err
@@ -294,7 +316,7 @@ func (d Draft) Validate() error {
 	if d.Invalid != "" {
 		return errors.New(d.Invalid)
 	}
-	if strings.TrimSpace(d.Title) == "" || strings.TrimSpace(d.Summary) == "" || strings.TrimSpace(d.Content) == "" || d.Category == "" {
+	if strings.TrimSpace(d.Title) == "" || d.Number == 0 && strings.TrimSpace(d.Summary) == "" || strings.TrimSpace(d.Content) == "" || d.Category == "" {
 		return errors.New("send title, summary, and body together before publishing")
 	}
 	return nil
@@ -304,7 +326,9 @@ func (d Draft) Empty() bool {
 	return !d.Locked() && d.Title == "" && d.Summary == "" && d.Content == "" && d.PendingContent == "" && len(d.Sources) == 0 && d.ReplacementSource == nil
 }
 
-func (d Draft) Locked() bool { return d.Number != 0 || d.GitOperation != "" }
+func (d Draft) Locked() bool {
+	return d.GitOperation != "" || d.Number != 0 && (d.Revision == nil || d.Revision.Applied)
+}
 
 func (d Draft) RichMarkdown() string { return "# " + d.Title + "\n\n" + d.Summary + "\n\n" + d.Content }
 

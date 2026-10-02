@@ -26,12 +26,16 @@ Draft and publish a post from your private chat with the bot: **one message, the
 
    Existing names also work without the `Category:` and `Tags:` labels. Use the
    labels for new names so trailing prose isn't mistaken for metadata.
+   Single-line bodies and additions always stay content; footer lines must be
+   together in the same message.
 
 2. **Edit and preview without starting over.**
 
    Edit your original Telegram message to change the title, summary, body, or
    footer. The same card updates in place. Further messages append to the body;
-   editing an appended message changes that addition.
+   editing an appended message changes that addition. An addition can also end
+   with the same category and tags footer; it updates the selections without
+   adding the footer to the body.
 
    Tap **Preview** to see the formatted post, category, and tags. Preview stays
    enabled through edits and restarts; **Back** returns to the compact view.
@@ -60,17 +64,45 @@ Draft and publish a post from your private chat with the bot: **one message, the
 
    If you've configured a channel or group, the bot posts there after the repository
    publication succeeds. The card shows the result without another success
-   message. A queued or published post is locked against editing and deletion.
+   message. Content is locked while publishing; `/delete` only removes drafts.
 
    If publication pauses, tap **Retry publish**. The bot checks whether the
    previous attempt already landed before continuing. If channel delivery is
    uncertain, check the channel before choosing the explicit retry button.
+
+5. **Edit a live article whenever needed.**
+
+   `/posts` lists live articles from the repository under **Today** and **Earlier**,
+   showing their original dates. Running it again replaces the previous list
+   with a new message. Tap **Edit #number**, use `/edit <number>`, or tap
+   **Edit** on a published card. Pending changes resume on the same card and stay
+   separate from `/drafts`.
+
+   Reply to the list with an article number to show that article and the next
+   older entries. The list updates in place and your reply is deleted; repeat
+   whenever needed. **Refresh** fetches the list from Git and keeps the selected
+   article at the top; refreshing the newest range shows the latest articles.
+
+   The card says **Editing live**. When an original message is recorded, tap
+   **Original message**, then tap the quote in the bot's small reply to open it.
+   The reply clears when the card next updates. Edit the source, reply to the card
+   to append (including an optional category and tags footer), or use `/replace`
+   to rewrite the post. Preview, Category, and Tags work as usual.
+   Tap **Save changes** to update the existing Markdown and taxonomy on `main`,
+   keeping the article number, publication date, and URL. Associated channel posts
+   and Markdown attachments are edited in place. Missing associations are skipped.
+
+   **Discard changes** (or `/cancel`) keeps the published version. If someone
+   changed the same article on Git, download your pending changes before choosing
+   **Discard & reload**. A failed channel edit shows **Retry channel update**;
+   retrying never creates a replacement post.
 
 Useful commands while writing:
 
 - `/taxonomy` — get a copyable list of categories and tags. Pin it yourself;
   the same message updates when the available names change.
 - `/drafts` · `/resume <number>` — list saved drafts and select one.
+- `/posts` · `/edit <number>` · `/save` — browse and edit live articles.
 - `/preview` · `/download` — preview the active draft or get its Markdown file.
 - `/replace` · `/undo` — replace the whole post or remove the last body addition.
 - `/cancel` — delete the entire active unfinished draft and remove its card.
@@ -82,5 +114,8 @@ Useful commands while writing:
   to future publications; `/unsetchannel` disables destination posting.
 
 Drafts survive restarts. Reply to an appended source with `/remove` to remove it
-from the draft and clear both messages from the chat. If the source is already
-gone, use the copyable `/remove <message ID>` shown under **Review**.
+from the draft and clear both messages from the chat. **Review** entries have
+matching **Source 1**, **Source 2**, … buttons that open a quoted reply the same
+way. Replying to that bot reply with `/remove` also removes the referenced addition.
+If the source is already gone, use the copyable `/remove <message ID>` shown
+beside its entry.

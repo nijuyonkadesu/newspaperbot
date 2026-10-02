@@ -33,6 +33,9 @@ func (r *Repository) Publish(ctx context.Context, job *store.Publication, checkp
 		} else if found {
 			return checkpoint()
 		}
+		if err := r.checkRevision(ctx, job); err != nil {
+			return err
+		}
 		// Only this marked, exclusively locked cache is disposable. Preserve
 		// unrelated untracked files; remove only this job's checkpointed note.
 		_, _ = r.git(ctx, "rebase", "--abort")
@@ -60,6 +63,9 @@ func (r *Repository) Publish(ctx context.Context, job *store.Publication, checkp
 			return err
 		} else if found {
 			return checkpoint()
+		}
+		if err := r.checkRevision(ctx, job); err != nil {
+			return err
 		}
 		if _, err := r.git(ctx, "rebase", "origin/main"); err != nil {
 			_, _ = r.git(ctx, "rebase", "--abort")
@@ -120,6 +126,58 @@ func validNotePath(name string) bool {
 }
 
 func (r *Repository) prepare(ctx context.Context, job *store.Publication, checkpoint func() error) error {
+	if job.Draft.Revision != nil {
+		job.Number, job.Filename, job.Slug, job.CommitSHA = job.Draft.Number, job.Draft.Filename, job.Draft.Slug, ""
+	} else if err := r.assignNote(job); err != nil {
+		return err
+	}
+	if err := checkpoint(); err != nil {
+		return err
+	} // Recover even a crash after writing an untracked note.
+	d := job.Draft
+	d.Number, d.Slug, d.Portfolio = job.Number, job.Slug, true
+	data, err := d.PortfolioMarkdown()
+	if err != nil {
+		return err
+	}
+	name := filepath.Join(r.config.CacheDir, job.Filename)
+	if d.Revision != nil {
+		// This disposable checkout is locked and rebuilt from Git on retries.
+		// Keep the create-only writer for new posts; revisions replace one file.
+		err = os.WriteFile(name, data, 0600)
+	} else {
+		err = post.WriteFile(name, data)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := r.command(ctx, "npm", "run", "taxonomy:sync"); err != nil {
+		return err
+	}
+	paths, err := r.taxonomyPaths()
+	if err != nil {
+		return err
+	}
+	if err := r.stage(ctx, job.Filename, paths); err != nil {
+		return err
+	}
+	verb := "Publish"
+	if d.Revision != nil {
+		verb = "Update"
+	}
+	message := fmt.Sprintf("%s note %d: %s\n\nBlogbot-Operation: %s", verb, job.Number, strings.ReplaceAll(job.Draft.Title, "\n", " "), job.Operation)
+	if _, err := r.git(ctx, "commit", "-m", message); err != nil {
+		return err
+	}
+	sha, err := r.git(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	job.CommitSHA = strings.TrimSpace(sha)
+	return checkpoint()
+}
+
+func (r *Repository) assignNote(job *store.Publication) error {
 	entries, err := os.ReadDir(filepath.Join(r.config.CacheDir, "content", "tweets"))
 	if err != nil {
 		return err
@@ -161,38 +219,7 @@ func (r *Repository) prepare(ctx context.Context, job *store.Publication, checkp
 	}
 	job.Slug, job.CommitSHA = slug, ""
 	job.Filename = fmt.Sprintf("content/tweets/%03d-%s.md", job.Number, slug)
-	if err := checkpoint(); err != nil {
-		return err
-	} // Recover even a crash after writing an untracked note.
-	d := job.Draft
-	d.Number, d.Slug, d.Portfolio = job.Number, job.Slug, true
-	data, err := d.PortfolioMarkdown()
-	if err != nil {
-		return err
-	}
-	if err := post.WriteFile(filepath.Join(r.config.CacheDir, job.Filename), data); err != nil {
-		return err
-	}
-	if _, err := r.command(ctx, "npm", "run", "taxonomy:sync"); err != nil {
-		return err
-	}
-	paths, err := r.taxonomyPaths()
-	if err != nil {
-		return err
-	}
-	if err := r.stage(ctx, job.Filename, paths); err != nil {
-		return err
-	}
-	message := fmt.Sprintf("Publish note %d: %s\n\nBlogbot-Operation: %s", job.Number, strings.ReplaceAll(job.Draft.Title, "\n", " "), job.Operation)
-	if _, err := r.git(ctx, "commit", "-m", message); err != nil {
-		return err
-	}
-	sha, err := r.git(ctx, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	job.CommitSHA = strings.TrimSpace(sha)
-	return checkpoint()
+	return nil
 }
 
 func (r *Repository) taxonomyPaths() ([]string, error) {

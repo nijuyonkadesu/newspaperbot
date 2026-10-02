@@ -44,6 +44,9 @@ func (d Draft) ValidatePortfolio() error {
 // JSON-quoted scalars are valid YAML and keep dates, punctuation, and Unicode
 // unambiguous for the portfolio's gray-matter parser.
 func (d Draft) PortfolioMarkdown() ([]byte, error) {
+	if d.Frontmatter != "" {
+		return d.articleMarkdown()
+	}
 	quote := func(s string) string { value, _ := json.Marshal(s); return string(value) }
 	slug := d.Slug
 	if slug == "" {

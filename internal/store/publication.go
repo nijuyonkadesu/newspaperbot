@@ -21,6 +21,7 @@ type Publication struct {
 	Number         int64
 	Filename, Slug string
 	Error          string
+	Conflict       bool
 }
 
 func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error) {
@@ -33,8 +34,11 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 	if err != nil {
 		return d, err
 	}
-	if d.Number != 0 {
+	if d.Number != 0 && d.Revision == nil {
 		return d, errors.New("this post already has a publication number")
+	}
+	if d.Revision != nil && (d.Revision.Applied || d.Revision.Conflict) {
+		return d, errors.New("this revision cannot be queued again")
 	}
 	if d.GitOperation != "" {
 		if d.GitState != "failed" {
@@ -53,21 +57,27 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 		}
 		d.GitOperation = hex.EncodeToString(random[:])
 		d.Slot = 0
-		d.PublishedAt = time.Now().UTC()
-		d.Portfolio, d.ChannelID = true, channel
-		if channel != 0 {
-			d.Delivery = "pending"
+		if d.Revision == nil {
+			d.PublishedAt = time.Now().UTC()
+			d.Portfolio, d.ChannelID = true, channel
+			if channel != 0 {
+				d.Delivery = "pending"
+			}
 		}
 		job := Publication{Operation: d.GitOperation, Draft: d, State: "queued"}
 		data, err := json.Marshal(job)
 		if err != nil {
 			return d, err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO publications(operation,draft_id,state,data) VALUES(?,?,'queued',?)", job.Operation, id, string(data)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO publications(operation,draft_id,state,data) VALUES(?,?,'queued',?)
+			ON CONFLICT(draft_id) DO UPDATE SET operation=excluded.operation,state=excluded.state,data=excluded.data`, job.Operation, id, string(data)); err != nil {
 			return d, err
 		}
 	}
 	d.GitState, d.Notice, d.View = "queued", "Publishing…", ""
+	if d.Revision != nil {
+		d.Notice = "Saving changes…"
+	}
 	d.UpdatedAt = time.Now().UTC()
 	data, err := json.Marshal(d)
 	if err != nil {
@@ -102,6 +112,12 @@ func (s *Store) FailPublication(ctx context.Context, job *Publication) (post.Dra
 		return d, errors.New("publication operation changed")
 	}
 	d.GitState, d.Notice = "failed", "Could not confirm the commit on main. Retry publish checks the remote before continuing."
+	if d.Revision != nil {
+		d.Notice = "Changes saved locally · retry saving"
+		if job.Conflict {
+			d.Revision.Conflict, d.Notice = true, "Article changed on main · download your changes or discard and reload"
+		}
+	}
 	d.UpdatedAt = time.Now().UTC()
 	data, err := json.Marshal(d)
 	if err != nil {
@@ -161,6 +177,10 @@ func (s *Store) FinishPublication(ctx context.Context, job *Publication) (post.D
 	}
 	d.Number, d.Filename, d.Slug, d.CommitSHA = job.Number, job.Filename, job.Slug, job.CommitSHA
 	d.Exported, d.GitState, d.Notice = true, "done", ""
+	if d.Revision != nil {
+		d.Revision.Applied = true
+		d.Delivery = "pending"
+	}
 	d.UpdatedAt = time.Now().UTC()
 	data, err := json.Marshal(d)
 	if err != nil {
