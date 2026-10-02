@@ -69,9 +69,21 @@ Destination · sent
 </tr>
 </table>
 
-One category, any tags. Existing names work without labels; label new names.
-`Tags: -` clears tags. Publishing assigns the article number/date and commits
-Markdown plus taxonomy, then posts to your configured destination.
+Put these optional lines **at the end of your post**:
+
+```text
+Category: concept
+Tags: go, my-new-tag
+```
+
+That selects **one category and two tags**. This format works for existing and
+new names. `Tags: -` means no tags.
+
+When you tap <kbd>Publish</kbd>, the bot:
+
+1. Assigns the article number and date.
+2. Commits the post and updated category/tag lists to Git.
+3. Sends the post to your configured channel/group, if any.
 
 **Published article → edit → save**
 
@@ -150,7 +162,7 @@ A short summary.<br><br>
 </tr>
 </table>
 
-Publish/Save adds new names to taxonomy; `*` is never stored.
+Publish/Save adds new names to the category/tag lists; `*` is never stored.
 Footer lines update selections, not body text. Single-line additions stay content.
 <kbd>Original message</kbd>, when available, opens a quote; tap it to find your source.
 Older articles remain editable. Drafts and pending edits survive restarts separately.
