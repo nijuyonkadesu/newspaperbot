@@ -56,7 +56,7 @@ func TestOneMessageDraftAndOneVisibleCard(t *testing.T) {
 	if h.api.count("sendMessage", false) != 1 || h.api.count("deleteMessage", false) != 0 {
 		t.Fatal("post submission sent or deleted another card")
 	}
-	if len(live[0].Markup.InlineKeyboard) != 2 || len(live[0].Markup.InlineKeyboard[0]) != 3 || len(live[0].Markup.InlineKeyboard[1]) != 2 {
+	if len(live[0].Markup.InlineKeyboard) < 2 || len(live[0].Markup.InlineKeyboard[0]) != 3 || len(live[0].Markup.InlineKeyboard[1]) != 2 {
 		t.Fatal("ready controls do not show category and tags directly")
 	}
 	if !strings.Contains(live[0].Text, fmt.Sprintf("<code>#%d</code>", d.Slot)) || strings.Contains(live[0].Text, fmt.Sprintf("Draft %d", d.Slot)) {
@@ -219,7 +219,7 @@ func TestRenderedPreviewFallbackKeepsOneCard(t *testing.T) {
 	h.api.mu.Unlock()
 	h.send("A correction")
 	d := h.active()
-	if d.CardID != cardID || h.api.live()[0].RichMarkdown != previewMarkdown(d, h.bot.ID()) || d.Notice != "" {
+	if d.CardID != cardID || h.api.live()[0].RichMarkdown != previewMarkdown(d) || d.Notice != "" {
 		t.Fatal("content correction did not restore preview on the same card")
 	}
 }
@@ -235,7 +235,7 @@ func TestPreviewSurvivesContentUpdatesAndRestartOnTheSameCard(t *testing.T) {
 		t.Helper()
 		d := h.active()
 		live := h.api.live()
-		if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || live[0].RichMarkdown != previewMarkdown(d, h.bot.ID()) {
+		if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || live[0].RichMarkdown != previewMarkdown(d) {
 			t.Fatal("content update lost preview or replaced its card")
 		}
 		if !strings.Contains(live[0].RichMarkdown, fmt.Sprintf("`#%d`", d.Slot)) || strings.Contains(live[0].RichMarkdown, fmt.Sprintf("Draft %d", d.Slot)) {

@@ -29,6 +29,8 @@ type apiCall struct {
 	Text, RichMarkdown, Document, ParseMode string
 	Markup                                  models.InlineKeyboardMarkup
 	Reaction                                []models.ReactionType
+	ReplyParameters                         *models.ReplyParameters
+	DisableNotification                     bool
 }
 
 type fakeAPI struct {
@@ -41,6 +43,7 @@ type fakeAPI struct {
 	botCannotPost    bool
 	botNotAdmin      bool
 	editError        string
+	replyError       string
 	deleteRejected   bool
 	richRejected     bool
 	reactionRejected bool
@@ -66,6 +69,14 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	call := apiCall{Method: filepath.Base(r.URL.Path), Text: r.FormValue("text"), ParseMode: r.FormValue("parse_mode")}
 	call.ChatID, _ = strconv.ParseInt(r.FormValue("chat_id"), 10, 64)
 	call.MessageID, _ = strconv.Atoi(r.FormValue("message_id"))
+	call.DisableNotification = r.FormValue("disable_notification") == "true"
+	if raw := r.FormValue("reply_parameters"); raw != "" {
+		call.ReplyParameters = &models.ReplyParameters{}
+		if err := json.Unmarshal([]byte(raw), call.ReplyParameters); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+	}
 	if raw := r.FormValue("rich_message"); raw != "" {
 		var rich models.InputRichMessage
 		if err := json.Unmarshal([]byte(raw), &rich); err != nil {
@@ -92,6 +103,22 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		call.Document = string(data)
 	}
+	if call.Method == "editMessageMedia" && r.MultipartForm != nil {
+		for _, files := range r.MultipartForm.File {
+			file, err := files[0].Open()
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			data, err := io.ReadAll(file)
+			file.Close()
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			call.Document = string(data)
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, call)
@@ -106,6 +133,10 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		text := f.editError
 		f.editError = ""
 		reject(400, text)
+		return
+	}
+	if call.Method == "sendMessage" && call.ReplyParameters != nil && f.replyError != "" {
+		reject(400, f.replyError)
 		return
 	}
 	if call.Method == "deleteMessage" && f.deleteRejected {
@@ -150,7 +181,7 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	case "deleteMessage":
 		delete(f.messages, call.MessageID)
 		result = true
-	case "editMessageText", "editMessageReplyMarkup":
+	case "editMessageText", "editMessageReplyMarkup", "editMessageMedia":
 		old, ok := f.messages[call.MessageID]
 		if !ok {
 			reject(400, "message to edit not found")
@@ -182,7 +213,9 @@ func (f *fakeAPI) live() []apiCall {
 	defer f.mu.Unlock()
 	result := []apiCall{}
 	for _, call := range f.messages {
-		result = append(result, call)
+		if call.ChatID > 0 {
+			result = append(result, call)
+		}
 	}
 	return result
 }
@@ -354,7 +387,7 @@ func TestLocalPublishAndPreview(t *testing.T) {
 	d := h.ready("# Heading\n\n**bold** and `code`")
 	h.send("/preview")
 	calls := h.api.snapshot()
-	if calls[len(calls)-1].RichMarkdown != previewMarkdown(d, h.bot.ID()) {
+	if calls[len(calls)-1].RichMarkdown != previewMarkdown(d) {
 		t.Fatal("preview did not pass Markdown to Telegram")
 	}
 	h.send("/publish")

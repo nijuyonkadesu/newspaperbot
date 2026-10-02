@@ -10,25 +10,34 @@ import (
 	"time"
 
 	"newspaperbot/internal/metadata"
+	"newspaperbot/internal/post"
 	"newspaperbot/internal/store"
 )
 
 type fakeRepository struct {
-	mu      sync.Mutex
-	entered chan struct{}
-	release chan struct{}
-	fail    bool
-	calls   int
+	mu       sync.Mutex
+	entered  chan struct{}
+	release  chan struct{}
+	fail     bool
+	calls    int
+	entries  []post.Article
+	conflict bool
 }
 
 func (r *fakeRepository) Catalog(context.Context) (metadata.Catalog, error) {
 	return metadata.Catalog{Categories: []string{"concept", "personal"}, Tags: []string{"go", "sqlite"}, Groups: map[string][]string{"concept": {"sqlite"}, "personal": {"go"}}, LastNumber: 268, Revision: "remote-sha"}, nil
 }
 func (r *fakeRepository) Refresh(context.Context) error { return nil }
+func (r *fakeRepository) Articles(context.Context) ([]post.Article, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]post.Article(nil), r.entries...), nil
+}
 func (r *fakeRepository) Publish(ctx context.Context, job *store.Publication, checkpoint func() error) error {
 	r.mu.Lock()
 	r.calls++
 	failed := r.fail
+	conflict := r.conflict
 	r.mu.Unlock()
 	if r.entered != nil {
 		select {
@@ -46,7 +55,26 @@ func (r *fakeRepository) Publish(ctx context.Context, job *store.Publication, ch
 	if failed {
 		return errors.New("simulated Git failure")
 	}
+	if conflict {
+		return post.ErrArticleChanged
+	}
 	job.Number, job.Filename, job.Slug, job.CommitSHA, job.State = 269, fmt.Sprintf("content/tweets/269-post-%d.md", job.Draft.ID), "title", "remote-commit", "pushed"
+	if job.Draft.Revision != nil {
+		job.Number, job.Filename, job.Slug = job.Draft.Number, job.Draft.Filename, job.Draft.Slug
+	}
+	d := job.Draft
+	d.Number, d.Filename, d.Slug = job.Number, job.Filename, job.Slug
+	raw, err := d.PortfolioMarkdown()
+	if err != nil {
+		return err
+	}
+	article, err := post.ReadArticle(d.Filename, string(raw))
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.entries = []post.Article{article}
+	r.mu.Unlock()
 	return checkpoint()
 }
 

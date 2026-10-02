@@ -295,7 +295,7 @@ func TestTwentyTagsCanBeSelectedAcrossPagesAndPreviewed(t *testing.T) {
 	h.click("back")
 	h.click("preview")
 	d := h.active()
-	if len(d.Tags) != 20 || h.api.live()[0].RichMarkdown != previewMarkdown(d, h.bot.ID()) {
+	if len(d.Tags) != 20 || h.api.live()[0].RichMarkdown != previewMarkdown(d) {
 		t.Fatal("pagination lost selections or preview truncated tags")
 	}
 }

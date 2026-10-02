@@ -49,18 +49,29 @@ func draftKeyboard(d post.Draft, preview bool) *models.InlineKeyboardMarkup {
 	if preview {
 		label, action = "Back", "back"
 	}
-	markup := keyboard(d, "Publish", "publish", label, action, "Options", "options")
+	saveLabel, saveAction := "Publish", "publish"
+	if d.Revision != nil {
+		saveLabel, saveAction = "Save changes", "save"
+	}
+	markup := keyboard(d, saveLabel, saveAction, label, action, "Options", "options")
 	addRow(markup, d, "Category", "categories-0", "Tags", "tags-0")
+	if d.Revision != nil {
+		addRow(markup, d, "Discard changes", "cancel")
+	}
 	return markup
 }
 
-func previewMarkdown(d post.Draft, botID int64) string {
+func previewMarkdown(d post.Draft) string {
 	tags := strings.Join(d.TagLabels(), ", ")
 	if tags == "" {
 		tags = "none"
 	}
 	escape := func(text string) string { return bot.EscapeMarkdown(html.EscapeString(text)) }
-	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n`#%d`\n\n**Category:** %s\n\n**Tags:** %s", d.Slot, escape(d.CategoryLabel()), escape(tags)) + messageIssuesMarkdown(d.MessageIssues, botID) + statusMarkdown(d.Notice)
+	identity := fmt.Sprintf("`#%d`", d.Slot)
+	if d.Revision != nil {
+		identity = fmt.Sprintf("**Editing live** · `#%d` · %s · %s", d.Number, articleAge(d), d.PublishedAt.Format("2006-01-02"))
+	}
+	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n%s\n\n**Category:** %s\n\n**Tags:** %s", identity, escape(d.CategoryLabel()), escape(tags)) + messageIssuesMarkdown(d.MessageIssues) + statusMarkdown(d.Notice)
 }
 
 func statusMarkdown(status string) string {
@@ -70,34 +81,26 @@ func statusMarkdown(status string) string {
 	return "\n\n**Status** · " + bot.EscapeMarkdown(status)
 }
 
-func sourceLink(botID int64, messageID int) string {
-	return fmt.Sprintf("tg://openmessage?user_id=%d&message_id=%d", botID, messageID)
-}
-
-func messageIssuesMarkdown(issues []post.MessageIssue, botID int64) string {
+func messageIssuesMarkdown(issues []post.MessageIssue) string {
 	if len(issues) == 0 {
 		return ""
 	}
 	var text strings.Builder
-	text.WriteString("\n\n**Review**")
+	text.WriteString("\n\n**Review**\n")
 	for i, issue := range issues {
-		separator := "\n- "
-		if i == 0 {
-			separator = "\n\n- "
-		}
-		fmt.Fprintf(&text, "%s[Source](%s) · %s · `/remove %d`", separator, sourceLink(botID, issue.MessageID), bot.EscapeMarkdown(issue.Reason), issue.MessageID)
+		fmt.Fprintf(&text, "\n%d. %s · `/remove %d`", i+1, bot.EscapeMarkdown(issue.Reason), issue.MessageID)
 	}
 	return text.String()
 }
 
-func messageIssuesHTML(issues []post.MessageIssue, botID int64) string {
+func messageIssuesHTML(issues []post.MessageIssue) string {
 	if len(issues) == 0 {
 		return ""
 	}
 	var text strings.Builder
 	text.WriteString("\n\n<b>Review</b>")
-	for _, issue := range issues {
-		fmt.Fprintf(&text, "\n<a href=\"%s\">Source</a> · %s · <code>/remove %d</code>", html.EscapeString(sourceLink(botID, issue.MessageID)), html.EscapeString(issue.Reason), issue.MessageID)
+	for i, issue := range issues {
+		fmt.Fprintf(&text, "\n%d. %s · <code>/remove %d</code>", i+1, html.EscapeString(issue.Reason), issue.MessageID)
 	}
 	return text.String()
 }
@@ -114,13 +117,33 @@ func overview(d post.Draft) string {
 	} else {
 		text += fmt.Sprintf("\n\n<i>%s · %s</i>", html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 	}
+	if d.Revision != nil {
+		text = "<b>Editing live</b> · " + articleIdentity(d) + "\n\n" + text
+	}
 	return text
 }
 
-func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
+func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 	text := overview(d)
 	markup := draftKeyboard(d, false)
 	switch {
+	case d.Revision != nil && d.Locked():
+		status := "Saving changes…"
+		markup = keyboard(d, "Download changes", "download")
+		if d.Revision.Conflict {
+			status = "Article changed on main"
+			addRow(markup, d, "Discard & reload", "reload", "Discard changes", "cancel")
+		} else if d.Revision.Applied {
+			status = "Repository updated · channel update pending"
+			addRow(markup, d, "Retry channel update", "save")
+		} else if d.GitState == "failed" {
+			status = "Changes saved locally · saving paused"
+			addRow(markup, d, "Retry saving", "save")
+		}
+		if d.Notice != "" {
+			status = d.Notice
+		}
+		text += "\n\n<b>Status</b> · " + html.EscapeString(status)
 	case d.GitOperation != "" && d.Number == 0:
 		text += "\n\nPublishing…"
 		markup = keyboard(d, "Download", "download")
@@ -128,7 +151,7 @@ func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 			text = overview(d) + "\n\nPublication paused. Your post is saved."
 			markup = keyboard(d, "Retry publish", "publish", "Download", "download")
 		}
-	case d.Number != 0:
+	case d.Number != 0 && d.Revision == nil:
 		status := "Export pending"
 		if d.Exported {
 			status = "Saved · " + html.EscapeString(d.Filename)
@@ -136,8 +159,11 @@ func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 				status = "Committed to main · <code>" + html.EscapeString(d.Filename) + "</code>"
 			}
 		}
-		text = fmt.Sprintf("<b>Post %d · %s</b>\n%s\n\n%s", d.Number, html.EscapeString(d.Title), html.EscapeString(clip(d.Summary, 400)), status)
+		text = fmt.Sprintf("<b>Live</b> · %s\n\n<b>%s</b>\n%s\n\n%s", articleIdentity(d), html.EscapeString(d.Title), html.EscapeString(clip(d.Summary, 400)), status)
 		markup = keyboard(d, "Download", "download")
+		if d.Portfolio && d.Exported && (d.ChannelID == 0 || d.Delivery == "sent") {
+			markup = keyboard(d, "Edit", "edit", "Download", "download")
+		}
 		if !d.Exported || d.ChannelID != 0 && d.Delivery != "sent" {
 			markup = keyboard(d, "Continue publishing", "publish", "Download", "download")
 		}
@@ -164,7 +190,11 @@ func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 			text += "\nYour current post stays saved until a valid replacement arrives."
 			markup = keyboard(d, "Keep current post", "back", "Cancel draft", "cancel")
 		}
-		text += "\n<i>Reply to this card to target this draft when writing several posts.</i>"
+		if d.Revision != nil {
+			text = "<b>Editing live</b> · " + articleIdentity(d) + "\n\nSend replacement title, summary, and Markdown body in <b>one message</b>.\n\n<pre>" + html.EscapeString(clip(source, 1100)) + "</pre>"
+			markup = keyboard(d, "Back", "back", "Discard changes", "cancel")
+		}
+		text += "\n<i>Reply to this card to target this post.</i>"
 	case d.View == "options":
 		text += "\n\n<b>Options</b>"
 		markup = keyboard(d, "Category", "categories-0", "Tags", "tags-0")
@@ -173,6 +203,9 @@ func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 			addRow(markup, d, "Undo last addition", "undo")
 		}
 		addRow(markup, d, "Back", "back", "Cancel draft", "cancel")
+		if d.Revision != nil {
+			markup.InlineKeyboard[len(markup.InlineKeyboard)-1][1].Text = "Discard changes"
+		}
 		if d.PendingContent != "" {
 			text += "\nAn unfinished body replacement from the old flow is also saved."
 			addRow(markup, d, "Use unfinished replacement", "recover-pending")
@@ -221,7 +254,11 @@ func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 	case d.View == "preview":
 		markup = draftKeyboard(d, true)
 	default:
-		text += "\n<i>Saved · edit your message to revise; send more to append.</i>"
+		if d.Revision != nil {
+			text += "\n<i>Reply to append · /replace rewrites</i>"
+		} else {
+			text += "\n<i>Saved · edit your message to revise; send more to append.</i>"
+		}
 	}
 	if d.Invalid != "" {
 		text += "\n\n<b>" + html.EscapeString(clip(d.Invalid, 350)) + "</b>"
@@ -233,10 +270,11 @@ func card(d post.Draft, botID int64) (string, *models.InlineKeyboardMarkup) {
 	if !d.Locked() && (d.CategoryLabel() != d.Category || strings.Join(d.TagLabels(), ",") != strings.Join(d.Tags, ",")) {
 		text += "\n<i>* new value · added when published</i>"
 	}
-	if d.Notice != "" {
+	if d.Notice != "" && !(d.Revision != nil && d.Locked()) {
 		text += "\n\n<b>Status</b> · " + html.EscapeString(clip(d.Notice, 350))
 	}
-	text += messageIssuesHTML(d.MessageIssues, botID)
+	text += messageIssuesHTML(d.MessageIssues)
+	sourceButtons(d, markup)
 	return text, markup
 }
 
@@ -263,13 +301,13 @@ func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
 			return err
 		}
 	}
-	drafts, err := a.Store.List(ctx)
+	drafts, err := a.Store.Cards(ctx)
 	if err != nil {
 		return err
 	}
 	var failures []error
 	for _, d := range drafts {
-		if d.ID == active.ID || d.CardID == 0 || d.Number != 0 {
+		if d.ID == active.ID || d.CardID == 0 || d.Number != 0 && d.Revision == nil {
 			continue
 		}
 		if a.Repository != nil && !d.Locked() {
@@ -289,23 +327,26 @@ func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
 
 // render edits the tracked card in place, creating one only when it is missing.
 func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
+	if err := a.clearSourceReply(ctx, b, d); err != nil {
+		a.logError(b, "source reply cleanup", err)
+	}
 	if d.View == "paused" {
 		d.View = "" // Older builds hid controls on drafts other than the selected one.
 		if err := a.Store.Save(ctx, d); err != nil {
 			return err
 		}
 	}
-	tooLong := d.View == "preview" && utf8.RuneCountInString(previewMarkdown(*d, b.ID())) > 32768
+	tooLong := d.View == "preview" && utf8.RuneCountInString(previewMarkdown(*d)) > 32768
 	if tooLong {
 		d.Notice = "This post is too long for an inline preview. /download contains the complete Markdown."
 		if err := a.Store.Save(ctx, d); err != nil {
 			return err
 		}
 	}
-	text, markup := card(*d, b.ID())
+	text, markup := card(*d)
 	var rich *models.InputRichMessage
 	if d.View == "preview" && d.Invalid == "" && !tooLong && !d.Locked() {
-		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d, b.ID())}
+		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d)}
 	}
 	err := a.writeCard(ctx, b, d, text, markup, rich)
 	if rich != nil && errors.Is(err, bot.ErrorBadRequest) {
@@ -313,7 +354,7 @@ func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 		if saveErr := a.Store.Save(ctx, d); saveErr != nil {
 			return saveErr
 		}
-		text, markup = card(*d, b.ID())
+		text, markup = card(*d)
 		return a.writeCard(ctx, b, d, text, markup, nil)
 	}
 	return err

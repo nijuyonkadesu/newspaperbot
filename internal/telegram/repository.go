@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-telegram/bot"
@@ -73,6 +74,7 @@ func (a *App) runPublication(ctx context.Context, b *bot.Bot, job *store.Publica
 	if err != nil {
 		a.logError(b, "repository publication", err)
 		job.Error = err.Error()
+		job.Conflict = errors.Is(err, post.ErrArticleChanged)
 		d, saveErr := a.Store.FailPublication(uiCtx, job)
 		if saveErr != nil {
 			a.logError(b, "publication checkpoint", saveErr)
@@ -90,6 +92,10 @@ func (a *App) runPublication(ctx context.Context, b *bot.Bot, job *store.Publica
 	}
 	if err := a.publish(uiCtx, b, &d, false); err != nil {
 		a.logError(b, "publication destination", err)
-		_ = a.notice(uiCtx, b, &d, "Committed to main. Continue publishing to finish destination delivery.")
+		status := "Committed to main. Continue publishing to finish destination delivery."
+		if d.Revision != nil {
+			status = "Repository updated · channel update pending"
+		}
+		_ = a.notice(uiCtx, b, &d, status)
 	}
 }

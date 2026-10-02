@@ -25,12 +25,12 @@ func TestEntityMarkdownPreservesTextLinksAndUTF16Offsets(t *testing.T) {
 
 func TestReviewStatusIsCompactAndActionable(t *testing.T) {
 	issues := []post.MessageIssue{{MessageID: 42, Reason: "formatting kept as text"}, {MessageID: 43, Reason: "rich content skipped"}}
-	markdown := messageIssuesMarkdown(issues, 123)
-	if strings.Count(markdown, "---") != 0 || !strings.Contains(markdown, "**Review**\n\n- [Source](tg://openmessage?user_id=123&message_id=42) · formatting kept as text · `/remove 42`\n- [Source](tg://openmessage?user_id=123&message_id=43) · rich content skipped · `/remove 43`") {
+	markdown := messageIssuesMarkdown(issues)
+	if strings.Count(markdown, "---") != 0 || !strings.Contains(markdown, "**Review**\n\n1. formatting kept as text · `/remove 42`\n2. rich content skipped · `/remove 43`") {
 		t.Fatalf("noisy or incomplete review Markdown: %q", markdown)
 	}
-	html := messageIssuesHTML(issues[:1], 123)
-	if html != "\n\n<b>Review</b>\n<a href=\"tg://openmessage?user_id=123&amp;message_id=42\">Source</a> · formatting kept as text · <code>/remove 42</code>" {
+	html := messageIssuesHTML(issues[:1])
+	if html != "\n\n<b>Review</b>\n1. formatting kept as text · <code>/remove 42</code>" {
 		t.Fatalf("noisy or incomplete review HTML: %q", html)
 	}
 	if statusMarkdown("Source unavailable") != "\n\n**Status** · Source unavailable" {
@@ -62,9 +62,10 @@ func TestForwardedEntitiesUpdateTheSamePreviewCard(t *testing.T) {
 		t.Fatalf("forwarded message was not preserved: content=%q issues=%+v", d.Content, d.MessageIssues)
 	}
 	live := h.api.live()
-	link := fmt.Sprintf("tg://openmessage?user_id=%d&message_id=%d", h.bot.ID(), messageID)
-	if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || !strings.Contains(live[0].RichMarkdown, link) {
-		t.Fatal("forwarded source replaced the card, lost preview mode, or omitted its review link")
+	_, markup := card(d)
+	button := markup.InlineKeyboard[len(markup.InlineKeyboard)-1][0]
+	if !d.Preview || d.View != "preview" || d.CardID != cardID || len(live) != 1 || button.Text != "Source 1" || !strings.HasSuffix(button.CallbackData, fmt.Sprintf(":source-%d", messageID)) {
+		t.Fatal("forwarded source replaced the card, lost preview mode, or omitted its review action")
 	}
 	if h.api.count("sendMessage", false) != sends || h.api.count("deleteMessage", false) != deletes {
 		t.Fatal("forwarded source sent or deleted a draft card")
@@ -97,8 +98,9 @@ func TestRichMessagesAreReferencedAndCaptionsAreIgnored(t *testing.T) {
 	if d.Content != "Body" || len(d.MessageIssues) != 1 || d.MessageIssues[0].MessageID != richID || d.CardID != cardID || !d.Preview {
 		t.Fatalf("rich message handling changed content or state: %+v", d)
 	}
-	if !strings.Contains(h.api.live()[0].RichMarkdown, fmt.Sprintf("message_id=%d", richID)) {
-		t.Fatal("rich message was not linked from the preview")
+	_, markup := card(d)
+	if button := markup.InlineKeyboard[len(markup.InlineKeyboard)-1][0]; button.Text != "Source 1" || !strings.HasSuffix(button.CallbackData, fmt.Sprintf(":source-%d", richID)) {
+		t.Fatal("rich message lacked a source action on the preview")
 	}
 
 	calls := len(h.api.snapshot())

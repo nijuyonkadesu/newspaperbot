@@ -33,6 +33,9 @@ func sendDocument(ctx context.Context, b *bot.Bot, chatID int64, d post.Draft) (
 }
 
 func (a *App) publish(ctx context.Context, b *bot.Bot, d *post.Draft, retry bool) error {
+	if d.Revision != nil {
+		return a.saveChanges(ctx, b, d)
+	}
 	if a.Repository == nil && d.GitOperation != "" && d.Number == 0 {
 		return a.notice(ctx, b, d, "Repository publishing is not configured. Restore its configuration to continue this publication.")
 	}

@@ -34,6 +34,7 @@ type Repository interface {
 	Catalog(context.Context) (metadata.Catalog, error)
 	Refresh(context.Context) error
 	Publish(context.Context, *store.Publication, func() error) error
+	Articles(context.Context) ([]post.Article, error)
 }
 
 func (a *App) catalog(ctx context.Context) (metadata.Catalog, error) {
@@ -59,13 +60,16 @@ The bot keeps one current card. Publish saves Markdown and posts to your destina
 Optional final two lines: Category: name and Tags: tag1, tag2 (or -).
 
 /drafts · /resume <number> — saved drafts
+/posts — live articles; reply to the list with a number to jump
+/edit <article number> — edit a live article; resume pending changes
+/save — save article changes, preserving its number, date, and URL
 /replace — replace the whole post in one message
 /undo — remove the last body addition
 /remove — remove a source by reply or message ID
 /preview — rendered preview on the same card
 /download — download the Markdown file
 /publish — publish the active draft
-/cancel — delete the active unfinished draft
+/cancel — delete the active draft, or discard pending article changes
 /delete <number> — delete a saved draft (/delete uses the active draft)
 /channels — show the active publishing destination
 /setchannel <@name or ID> · /unsetchannel
@@ -130,7 +134,7 @@ func (a *App) errorDraft(ctx context.Context, update *models.Update) (post.Draft
 		fields := strings.Fields(m.Text)
 		if len(fields) > 0 {
 			switch strings.SplitN(fields[0], "@", 2)[0] {
-			case "/start", "/help", "/taxonomy", "/drafts", "/channels", "/setchannel", "/unsetchannel", "/delete", "/cancel", "/remove":
+			case "/start", "/help", "/taxonomy", "/drafts", "/posts", "/edit", "/channels", "/setchannel", "/unsetchannel", "/delete", "/cancel", "/remove":
 				return post.Draft{}, sql.ErrNoRows
 			case "/resume":
 				if len(fields) == 2 {
@@ -169,6 +173,9 @@ func (a *App) replyHTML(ctx context.Context, b *bot.Bot, text string) error {
 }
 
 func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, updateID int64) error {
+	if handled, err := a.articleListReply(ctx, b, m); handled {
+		return err
+	}
 	fields := strings.Fields(m.Text)
 	if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
 		command := strings.SplitN(fields[0], "@", 2)[0]
@@ -255,6 +262,19 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				}
 				return nil
 			}
+			if command == "/cancel" {
+				d, err := a.Store.Get(ctx, id)
+				if err != nil {
+					return err
+				}
+				if d.Revision != nil {
+					if err := a.discardChanges(ctx, b, &d, false); err != nil {
+						return err
+					}
+					a.deleteOwnerMessage(ctx, b, m.ID, "cancel revision")
+					return nil
+				}
+			}
 			return a.discard(ctx, b, id, m.ID)
 		case "/remove":
 			const usage = "Reply with /remove · deleted source: /remove ID"
@@ -277,6 +297,9 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			if err != nil {
 				return err
 			}
+			if messageID == d.SourceReplyID {
+				messageID = d.SourceReplyToID
+			}
 			if err := d.RemoveSource(messageID); err != nil {
 				if err := a.notice(ctx, b, &d, err.Error()); err != nil {
 					return err
@@ -295,6 +318,17 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			return nil
 		case "/drafts":
 			return a.list(ctx, b)
+		case "/posts":
+			return a.articles(ctx, b, 0, "", true)
+		case "/edit":
+			if len(fields) != 2 {
+				return a.reply(ctx, b, "Use /edit <article number> from /posts.", nil)
+			}
+			number, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil || number <= 0 {
+				return a.reply(ctx, b, "Use an article number from /posts.", nil)
+			}
+			return a.editArticle(ctx, b, number)
 		case "/channels":
 			return a.channels(ctx, b)
 		case "/resume":
@@ -330,7 +364,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				return err
 			}
 			return a.reply(ctx, b, "Publishing destination cleared for future posts.", nil)
-		case "/preview", "/publish", "/replace", "/undo", "/download", "/done":
+		case "/preview", "/publish", "/save", "/replace", "/undo", "/download", "/done":
 			d, err := a.target(ctx, b, m)
 			if err != nil || d.ID == 0 {
 				return err
@@ -358,7 +392,10 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		return nil
 	}
 	if d.Locked() {
-		return a.notice(ctx, b, &d, "This post is locked. Use /newpost for another draft.")
+		if d.Number != 0 && d.Revision == nil {
+			return a.notice(ctx, b, &d, fmt.Sprintf("Live article · use /edit %d to change it", d.Number))
+		}
+		return a.notice(ctx, b, &d, "Saving in progress · content is locked")
 	}
 	text, issue := importText(m)
 	if text == "" {
@@ -373,8 +410,8 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		return a.render(ctx, b, &d)
 	}
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
+	a.refreshChoices(ctx, b, &d)
 	if d.View == "replace" || d.Step == post.Compose {
-		a.refreshChoices(ctx, b, &d)
 		if err := d.Replace(source); err != nil {
 			if d.View == "replace" {
 				d.ReplacementSource = &source
@@ -425,13 +462,7 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 		}
 		return a.render(ctx, b, &d)
 	}
-	full := d.ReplacementSource != nil && d.ReplacementSource.MessageID == m.ID
-	for _, source := range d.Sources {
-		full = full || source.MessageID == m.ID && source.Full
-	}
-	if full {
-		a.refreshChoices(ctx, b, &d)
-	}
+	a.refreshChoices(ctx, b, &d)
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
 	if pending := d.ReplacementSource; pending != nil && pending.MessageID == m.ID {
 		if !source.NewerThan(*pending) {
@@ -446,7 +477,6 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 			return nil
 		}
 		if d.View == "replace" || d.Step == post.Compose {
-			a.refreshChoices(ctx, b, &d)
 			err = d.Replace(source)
 			if err != nil {
 				if d.View == "replace" {
@@ -473,6 +503,14 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 
 func setMessageIssue(d *post.Draft, messageID int, updateID int64, editDate int, reason string) {
 	d.MessageIssues = slices.DeleteFunc(d.MessageIssues, func(issue post.MessageIssue) bool { return issue.MessageID == messageID })
+	for _, source := range d.Sources {
+		if source.MessageID == messageID && !source.Full && source.ParseError != "" {
+			if reason != "" {
+				reason += " · "
+			}
+			reason += "Invalid footer"
+		}
+	}
 	if reason != "" {
 		d.MessageIssues = append(d.MessageIssues, post.MessageIssue{MessageID: messageID, UpdateID: updateID, EditDate: editDate, Reason: reason})
 	}
@@ -517,6 +555,9 @@ func (a *App) target(ctx context.Context, b *bot.Bot, m *models.Message) (post.D
 }
 
 func (a *App) callback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) error {
+	if handled, err := a.articleCallback(ctx, b, q); handled {
+		return err
+	}
 	toast := func(text string) error {
 		_, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: text})
 		return err
@@ -553,10 +594,29 @@ func (a *App) callback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery)
 }
 
 func (a *App) action(ctx context.Context, b *bot.Bot, d *post.Draft, action string) error {
+	if strings.HasPrefix(action, "source-") {
+		id, err := strconv.Atoi(strings.TrimPrefix(action, "source-"))
+		if err != nil {
+			return a.notice(ctx, b, d, "Source unavailable · use the current controls")
+		}
+		return a.showSource(ctx, b, d, id)
+	}
 	switch action {
 	case "cancel":
+		if d.Revision != nil {
+			return a.discardChanges(ctx, b, d, false)
+		}
 		return a.discard(ctx, b, d.ID, 0)
+	case "reload":
+		return a.discardChanges(ctx, b, d, true)
+	case "edit":
+		return a.editArticle(ctx, b, d.Number)
+	case "save":
+		return a.saveChanges(ctx, b, d)
 	case "publish":
+		if d.Revision != nil {
+			return a.notice(ctx, b, d, "Use Save changes for this live article.")
+		}
 		return a.publish(ctx, b, d, false)
 	case "retry":
 		return a.publish(ctx, b, d, true)
@@ -646,6 +706,7 @@ func (a *App) discard(ctx context.Context, b *bot.Bot, id int64, commandMessageI
 	if err != nil {
 		return err
 	}
+	a.deleteOwnerMessage(ctx, b, d.SourceReplyID, "source reply cleanup")
 	if d.CardID != 0 {
 		if !a.deleteCard(ctx, b, d.CardID) {
 			// An expired Telegram card may remain even though the draft is gone.
