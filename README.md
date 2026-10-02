@@ -163,27 +163,44 @@ A short summary.<br><br>
 </table>
 
 Publish/Save adds new names to the category/tag lists; `*` is never stored.
-Footer lines update selections, not body text. Single-line additions stay content.
-<kbd>Original message</kbd>, when available, opens a quote; tap it to find your source.
-Older articles remain editable. Drafts and pending edits survive restarts separately.
 
 **More chat examples**
 
 | You send / tap | Bot / chat change |
 | --- | --- |
-| Reply to the `/posts` list: `268` | List jumps to `#268`; your reply disappears. |
+| Reply to a card: `One more detail.`<br><br>`Category: personal`<br>`Tags: go` | Adds `One more detail.` to the body. Sets category to `personal` and tags to `go`; the two footer lines are removed from the body. |
+| Reply with just `personal` | Adds the word `personal` to the body; category stays unchanged. |
+| <kbd>Original message</kbd>, if shown → tap the quoted message | Opens the message you originally sent. Edit it to update this post's card. |
+| `/edit 268` for an older article | **Editing live** · `#268` · Earlier · 2024-07-25<br>Articles have no editing deadline. |
+| Reply to the `/posts` output with `268` | List jumps to `#268`; your reply disappears. |
 | <kbd>Refresh</kbd> / `/posts` again | Reload current range / replace list with newest articles. |
 | <kbd>Preview #268</kbd> → <kbd>Back</kbd> | Read article → return to list; no edit started. |
 | `/newpost` while draft `#1` has text | `#2`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Cancel draft</kbd><br><br>Draft `#1` stays saved; reply to either card to append there. |
 | `/drafts` | **Saved drafts** · `/resume <number>`<br>`1 · A useful trick`<br>`2 · Untitled` |
-| `/resume 1` | **A useful trick**<br>`#1` · *concept · go*<br><kbd>Publish</kbd> <kbd>Preview</kbd><br><br>Further unthreaded text goes here. |
+| `/resume 1`, including after a restart | Reopens saved draft `#1`.<br>**A useful trick**<br>`#1` · *concept · go*<br><kbd>Publish</kbd> <kbd>Preview</kbd><br><br>Further unthreaded text goes here. |
+| `/edit 269` after a restart | Resumes saved, unfinished edits to article `#269`. Article edits aren't listed in `/drafts`. |
 | `/replace` | `#1`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Keep current post</kbd> <kbd>Cancel draft</kbd><br><br>Send a valid replacement to update the card. |
-| `/download` | Markdown attachment: `269-a-useful-trick.md` |
 | `/undo` after appending `One more detail.` | Addition leaves the card; its chat message stays. |
 | Reply to that addition: `/remove` | Addition removed; source and command cleared where allowed. |
 | **Review** → <kbd>Source 1</kbd> → reply `/remove` | Open the failing source, then remove it. Deleted source: `/remove 42`. |
 | `/cancel` on draft `#1` / `/delete 2` | Delete the entire selected draft / delete draft `#2`. |
 | `/help` | Usage and command list. |
+
+**Download a draft or article**
+
+Reply with `/download` to a post's own card to get **that post's Markdown**.
+Downloads include your pending article edits.
+
+| You send / tap | Bot sends |
+| --- | --- |
+| `/resume 1` → `/download` | `draft-1.md` — saved draft `#1`. |
+| `/edit 269` → change the text → `/download` | `269-a-useful-trick.md` — includes edits you haven't saved to Git yet. |
+| Reply to draft `#2`'s card: `/download` | `draft-2.md`, even while you're working on draft `#1`. |
+| On a draft/edit card: <kbd>Options</kbd> → <kbd>Download</kbd> | That card's Markdown file. Published cards have <kbd>Download</kbd> directly. |
+| `/posts` → <kbd>Preview #269</kbd> → <kbd>Edit #269</kbd> → `/download` | Article `#269`'s Markdown file. |
+
+Plain `/download` uses the post selected with `/newpost`, `/resume`, `/edit`,
+or <kbd>Replace post</kbd>. Previewing another post doesn't switch that selection.
 
 **Taxonomy and destination**
 
@@ -197,3 +214,6 @@ Older articles remain editable. Drafts and pending edits survive restarts separa
 Pin `/taxonomy`; the bot updates that message as names change. Tag groups are
 hints, not restrictions. Setting a destination requires bot admin access and
 your membership; it applies to future publications.
+
+> **Warning:** Media attachments and their captions are currently ignored.
+> They aren't included in previews, Markdown files, or published posts.
