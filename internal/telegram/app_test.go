@@ -27,6 +27,7 @@ type apiCall struct {
 	ChatID                                  int64
 	MessageID, ResultID                     int
 	Text, RichMarkdown, Document, ParseMode string
+	DocumentFilename                        string
 	Markup                                  models.InlineKeyboardMarkup
 	Commands                                []models.BotCommand
 	Reaction                                []models.ReactionType
@@ -129,7 +130,8 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if file, _, err := r.FormFile("document"); err == nil {
+	if file, header, err := r.FormFile("document"); err == nil {
+		call.DocumentFilename = header.Filename
 		data, err := io.ReadAll(file)
 		file.Close()
 		if err != nil {

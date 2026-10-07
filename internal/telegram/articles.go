@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,6 +36,23 @@ func (a *App) liveArticles(ctx context.Context) ([]post.Article, error) {
 		return nil, err
 	}
 	return a.Repository.Articles(ctx)
+}
+
+func (a *App) downloadArticle(ctx context.Context, b *bot.Bot, number int64) error {
+	if a.Repository == nil {
+		return a.replyHTML(ctx, b, "<b>Live articles</b>\nRepository publishing is not configured.")
+	}
+	articles, err := a.liveArticles(ctx)
+	if err != nil {
+		return err
+	}
+	for _, article := range articles {
+		if article.Number == number {
+			_, err := sendMarkdown(ctx, b, a.OwnerID, filepath.Base(article.Filename), []byte(article.Original))
+			return err
+		}
+	}
+	return a.replyHTML(ctx, b, fmt.Sprintf("<b>Article unavailable</b> · <code>#%d</code>\nUse /posts to browse live articles.", number))
 }
 
 func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice string, replace bool) error {

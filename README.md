@@ -196,12 +196,14 @@ Downloads include your pending article edits.
 | --- | --- |
 | `/resume 1` → `/download` | `draft-1.md` — saved draft `#1`. |
 | `/edit 269` → change the text → `/download` | `269-a-useful-trick.md` — includes edits you haven't saved to Git yet. |
+| `/download 269` | Published `#269` as stored in Git. Keeps your selection. |
 | Reply to draft `#2`'s card: `/download` | `draft-2.md`, even while you're working on draft `#1`. |
 | On a draft/edit card: <kbd>Options</kbd> → <kbd>Download</kbd> | That card's Markdown file. Published cards have <kbd>Download</kbd> directly. |
 | `/posts` → <kbd>Preview #269</kbd> → <kbd>Edit #269</kbd> → `/download` | Article `#269`'s Markdown file. |
 
 Plain `/download` uses the post selected with `/newpost`, `/resume`, `/edit`,
 or <kbd>Replace post</kbd>. Previewing another post doesn't switch that selection.
+`/download 269` always gets the published version; pending edits need plain `/download` or a reply to their card.
 
 **Taxonomy and destination**
 

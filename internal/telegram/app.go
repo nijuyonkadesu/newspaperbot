@@ -72,7 +72,7 @@ Optional footer: Category: name, then Tags: tag1, tag2 (or -).
 /replace — replace entire post
 /undo — remove last appended text; keep chat message
 /remove · /remove <message ID> — remove addition by reply / ID
-/download — download Markdown
+/download [article number] — download selected post / published article
 /publish — publish draft
 /cancel — delete draft / discard article edits
 /delete <draft number> — delete specific draft
@@ -160,10 +160,13 @@ func (a *App) errorDraft(ctx context.Context, update *models.Update) (post.Draft
 		return a.Store.FromMessage(ctx, m.ID)
 	}
 	if m := update.Message; m != nil {
+		fields := strings.Fields(m.Text)
+		if len(fields) > 1 && strings.SplitN(fields[0], "@", 2)[0] == "/download" {
+			return post.Draft{}, sql.ErrNoRows
+		}
 		if m.ReplyToMessage != nil {
 			return a.Store.FromMessage(ctx, m.ReplyToMessage.ID)
 		}
-		fields := strings.Fields(m.Text)
 		if len(fields) > 0 {
 			switch strings.SplitN(fields[0], "@", 2)[0] {
 			case "/start", "/help", "/taxonomy", "/drafts", "/posts", "/edit", "/channels", "/setchannel", "/unsetchannel", "/delete", "/cancel", "/remove":
@@ -393,7 +396,16 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				return err
 			}
 			return a.reply(ctx, b, "Publishing destination cleared for future posts.", nil)
-		case "/publish", "/save", "/replace", "/undo", "/download":
+		case "/download":
+			if len(fields) > 1 {
+				number, err := strconv.ParseInt(fields[1], 10, 64)
+				if len(fields) != 2 || err != nil || number <= 0 {
+					return a.replyHTML(ctx, b, "<code>/download</code> · selected post\n<code>/download 269</code> · published article")
+				}
+				return a.downloadArticle(ctx, b, number)
+			}
+			fallthrough
+		case "/publish", "/save", "/replace", "/undo":
 			d, err := a.target(ctx, b, m)
 			if err != nil || d.ID == 0 {
 				return err

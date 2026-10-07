@@ -29,6 +29,10 @@ func sendDocument(ctx context.Context, b *bot.Bot, chatID int64, d post.Draft) (
 			name = filepath.Base(d.Filename)
 		}
 	}
+	return sendMarkdown(ctx, b, chatID, name, data)
+}
+
+func sendMarkdown(ctx context.Context, b *bot.Bot, chatID int64, name string, data []byte) (*models.Message, error) {
 	return b.SendDocument(ctx, &bot.SendDocumentParams{ChatID: chatID, Document: &models.InputFileUpload{Filename: name, Data: bytes.NewReader(data)}})
 }
 
