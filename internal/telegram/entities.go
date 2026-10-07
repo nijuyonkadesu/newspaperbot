@@ -46,6 +46,15 @@ func entityMarkdown(text string, entities []models.MessageEntity) (string, bool)
 			incomplete = true
 			continue
 		}
+		if entity.Type == models.MessageEntityTypeSpoiler {
+			body := text[start:end]
+			trimmed := strings.TrimSpace(body)
+			if trimmed == "" {
+				continue
+			}
+			start += strings.Index(body, trimmed)
+			end = start + len(trimmed)
+		}
 		mark := entityMark{start: start, end: end}
 		switch entity.Type {
 		case models.MessageEntityTypeBold:
@@ -54,6 +63,8 @@ func entityMarkdown(text string, entities []models.MessageEntity) (string, bool)
 			mark.open, mark.close = "*", "*"
 		case models.MessageEntityTypeStrikethrough:
 			mark.open, mark.close = "~~", "~~"
+		case models.MessageEntityTypeSpoiler:
+			mark.open, mark.close = "||", "||"
 		case models.MessageEntityTypeCode:
 			mark.open = strings.Repeat("`", longestRun(text[start:end], '`')+1)
 			mark.close = mark.open

@@ -244,6 +244,13 @@ func (i *richImporter) text(text models.RichText, raw bool, depth int) string {
 		return "*" + body + "*"
 	case models.RichTextTypeStrikethrough:
 		return "~~" + body + "~~"
+	case models.RichTextTypeSpoiler:
+		trimmed := strings.TrimSpace(body)
+		if trimmed == "" {
+			return body
+		}
+		start := strings.Index(body, trimmed)
+		return body[:start] + "||" + trimmed + "||" + body[start+len(trimmed):]
 	case models.RichTextTypeCode:
 		body = i.text(value.Text, true, depth+1)
 		code, _ := entityMarkdown(body, []models.MessageEntity{{Type: models.MessageEntityTypeCode, Length: len(utf16.Encode([]rune(body)))}})

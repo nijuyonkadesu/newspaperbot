@@ -8,6 +8,7 @@ Implemented:
 - The site's existing asset-copy step serves these files under `/assets/images/posts/`. Images, Markdown, and generated taxonomy share one commit.
 - Rich previews and channel/group messages reuse Telegram photo IDs. Image documents without thumbnails use a file block in Telegram.
 - Forwarded rich messages import headings, paragraphs, links, emphasis, code, lists, quotes, tables, and photos. Unsupported formatting/layouts keep accessible text and links, with Review on the same card.
+- Spoilers from typed `||text||`, Telegram entities, and forwarded rich blocks retain their boundaries and nested formatting/links. The portfolio uses the same syntax with neutral particle dust and tap-to-reveal.
 - Exported photo captions use explicit Markdown caption blocks; Telegram cards and channel/group messages hide those markers.
 - Public forwarded sources are linked. Videos and other attachments use public source/supplied links; unresolved links require review before publication.
 - Albums retain message order and their original draft. Publish waits briefly for arrivals; later members become unsaved edits to the same article.

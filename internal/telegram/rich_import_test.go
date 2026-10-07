@@ -92,7 +92,7 @@ func TestRealRichPreviewResponsesImportWithoutLosingContent(t *testing.T) {
 					t.Fatal("caption export markers leaked into Telegram")
 				}
 			case "unsupported-format":
-				if !strings.Contains(text, "[link](https://example.com/u)") || !strings.Contains(text, "spoiler") || !strings.Contains(text, "highlight") {
+				if !strings.Contains(text, "[link](https://example.com/u)") || !strings.Contains(text, "||spoiler||") || !strings.Contains(text, "highlight") {
 					t.Fatal("unsupported styling lost accessible text or its nested link")
 				}
 			case "details":

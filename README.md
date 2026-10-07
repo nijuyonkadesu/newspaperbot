@@ -225,6 +225,7 @@ your membership; it applies to future publications.
 | Reply to a draft/edit card with your photo | Photo joins that post. Caption appears beneath it; editing the caption updates the card. |
 | Forward a photo album | Photos stay together, in message order. Public source gets a link; captions stay with their media. |
 | Forward a rich message | Text, links, headings, lists, quotes, tables, and photos join the post. Unsupported formatting appears under **Review** on the same card. |
+| Write `\|\|hidden text\|\|` | Hidden in Telegram Preview and on the site. Tap to reveal; formatting and links inside are preserved. |
 | <kbd>Preview</kbd> | Photos appear using Telegram's existing files. No image download yet. |
 | <kbd>Publish</kbd> / <kbd>Save changes</kbd> | Retrieves new images from Bot API; commits them with Markdown and taxonomy. Site captions appear centered beneath their photos. |
 | Send/forward a video | Uses its public source link. Without one: **Review** · Video needs a public URL. |
