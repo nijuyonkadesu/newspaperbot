@@ -317,6 +317,10 @@ func (d *Draft) RemoveSource(messageID int) error {
 }
 
 func (d *Draft) rebuild() error {
+	return d.rebuildWithCaptions(false)
+}
+
+func (d *Draft) rebuildWithCaptions(captionBlocks bool) error {
 	d.Notice = ""
 	title, summary, body := d.Title, d.Summary, d.BaseContent
 	links, groups := d.mediaLinks(), map[string]bool{}
@@ -348,7 +352,7 @@ func (d *Draft) rebuild() error {
 				if body != "" {
 					body += "\n\n"
 				}
-				body += d.mediaBody(member, links, group == "" || i == len(members)-1)
+				body += d.mediaBody(member, links, group == "" || i == len(members)-1, captionBlocks)
 			}
 		} else if source.Full {
 			var err error
@@ -395,7 +399,9 @@ func (d Draft) Locked() bool {
 	return d.GitOperation != "" || d.Number != 0 && (d.Revision == nil || d.Revision.Applied)
 }
 
-func (d Draft) RichMarkdown() string { return "# " + d.Title + "\n\n" + d.Summary + "\n\n" + d.Content }
+func (d Draft) RichMarkdown() string {
+	return "# " + d.Title + "\n\n" + d.Summary + "\n\n" + d.TelegramContent()
+}
 
 func (d Draft) Markdown() ([]byte, error) {
 	if d.Portfolio {
@@ -417,5 +423,5 @@ func (d Draft) Markdown() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(append(data, '\n', '\n'), []byte(d.Content)...), nil
+	return append(append(data, '\n', '\n'), []byte(d.exportContent())...), nil
 }

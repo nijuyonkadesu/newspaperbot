@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot/models"
+	"newspaperbot/internal/post"
 )
 
 type entityMark struct {
@@ -16,18 +17,21 @@ type entityMark struct {
 	order       int
 }
 
-func importText(m *models.Message) (text, issue string) {
+func importText(m *models.Message) (text, issue string, images map[string]post.ImageRef) {
 	if m.RichMessage != nil {
-		return "", "rich content skipped"
+		text, issue, images = importRichMessage(m.RichMessage)
+		if text != "" || m.Text == "" {
+			return text, issue, images
+		}
 	}
 	if m.Text == "" { // Captions are handled by the media importer.
-		return "", ""
+		return "", "", nil
 	}
 	text, incomplete := entityMarkdown(m.Text, m.Entities)
 	if incomplete {
 		issue = "formatting kept as text"
 	}
-	return text, issue
+	return text, issue, images
 }
 
 // entityMarkdown retains the original text and inserts Markdown only for
@@ -53,6 +57,10 @@ func entityMarkdown(text string, entities []models.MessageEntity) (string, bool)
 		case models.MessageEntityTypeCode:
 			mark.open = strings.Repeat("`", longestRun(text[start:end], '`')+1)
 			mark.close = mark.open
+			if strings.HasPrefix(text[start:end], "`") || strings.HasSuffix(text[start:end], "`") || strings.HasPrefix(text[start:end], " ") && strings.HasSuffix(text[start:end], " ") && strings.TrimSpace(text[start:end]) != "" {
+				mark.open += " "
+				mark.close = " " + mark.close
+			}
 		case models.MessageEntityTypePre:
 			language := entity.Language
 			if !validLanguage(language) {
@@ -192,7 +200,7 @@ func longestRun(text string, target byte) int {
 }
 
 func escapeLinkURL(url string) string {
-	return strings.NewReplacer(`\`, `\\`, `)`, `\)`).Replace(url)
+	return strings.NewReplacer("(", "%28", ")", "%29", "<", "%3C", ">", "%3E", "\"", "%22", "'", "%27", "\\", "%5C", "`", "%60", " ", "%20").Replace(url)
 }
 
 func overlaps(a, b entityMark) bool { return a.start < b.end && b.start < a.end }

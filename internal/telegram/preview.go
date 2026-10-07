@@ -104,7 +104,7 @@ func appendLinkCard(markdown string, card linkpreview.Card, withImage, footer bo
 			return markdown
 		}
 	}
-	destination := strings.NewReplacer("(", "%28", ")", "%29", "<", "%3C", ">", "%3E", "\"", "%22", "'", "%27", "\\", "%5C", "`", "%60").Replace(card.URL)
+	destination := escapeLinkURL(card.URL)
 	block := "\n\n---\n\n"
 	if withImage {
 		block += "![](tg://photo?id=newspaperbot_preview)\n\n"

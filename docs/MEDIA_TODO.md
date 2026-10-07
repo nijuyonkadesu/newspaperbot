@@ -7,6 +7,8 @@ Implemented:
 - Publish/Save retrieves new image files from Bot API, validates size/format/dimensions, and writes them under `src/assets/images/posts/` before the Git commit. Filenames derive from Telegram's stable unique file IDs.
 - The site's existing asset-copy step serves these files under `/assets/images/posts/`. Images, Markdown, and generated taxonomy share one commit.
 - Rich previews and channel/group messages reuse Telegram photo IDs. Image documents without thumbnails use a file block in Telegram.
+- Forwarded rich messages import headings, paragraphs, links, emphasis, code, lists, quotes, tables, and photos. Unsupported formatting/layouts keep accessible text and links, with Review on the same card.
+- Exported photo captions use explicit Markdown caption blocks; Telegram cards and channel/group messages hide those markers.
 - Public forwarded sources are linked. Videos and other attachments use public source/supplied links; unresolved links require review before publication.
 - Albums retain message order and their original draft. Publish waits briefly for arrivals; later members become unsaved edits to the same article.
 - `/remove` removes the item and its caption. Caption and supplied-link edits update the card; manual chat deletions remain undetectable.
@@ -16,7 +18,7 @@ Local Bot API: when `getFile` returns an absolute path, the bot's service user m
 
 Still deferred:
 
-- Import forwarded RichMessage blocks. They currently appear under Review.
+- Additional rich layouts and embedded media types beyond the supported importer.
 - Host videos/play them directly in the website rather than link them.
 - Add dedicated image alt-text editing. Captions remain separate from alt text.
 - Reconstruct Telegram photo references for repository articles after resetting the bot database.

@@ -1,0 +1,629 @@
+[
+  {
+    "name": "generated-preview",
+    "markdown": "# Round-trip preview\n\nA short summary.\n\n## Section\nA **bold** idea with [link](https://example.com).\n\n> Quoted text.\n\n- first\n- second\n\n```go\nfmt.Println(\"hello\")\n```\n\n---\n\n`#1`\n\n**Category:** development\n\n**Tags:** go",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "Round-trip preview",
+          "size": 1
+        },
+        {
+          "type": "paragraph",
+          "text": "A short summary."
+        },
+        {
+          "type": "heading",
+          "text": "Section",
+          "size": 2
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            "A ",
+            {
+              "type": "bold",
+              "text": "bold"
+            },
+            " idea with ",
+            {
+              "type": "url",
+              "text": "link",
+              "url": "https://example.com/"
+            },
+            "."
+          ]
+        },
+        {
+          "type": "blockquote",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": "Quoted text."
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "label": "•",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "first"
+                }
+              ]
+            },
+            {
+              "label": "•",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "second"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "pre",
+          "text": "fmt.Println(\"hello\")",
+          "language": "go"
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "type": "code",
+            "text": "#1"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            {
+              "type": "bold",
+              "text": "Category:"
+            },
+            " development"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            {
+              "type": "bold",
+              "text": "Tags:"
+            },
+            " go"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "nested-links",
+    "markdown": "A **bold *italic*** idea. 🙂 [**Link [label]**](https://example.com/a\\(b\\)?x=1&y=2). [email](mailto:user@example.com) and [phone](tel:+123456789).",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": [
+            "A ",
+            {
+              "type": "bold",
+              "text": [
+                "bold ",
+                {
+                  "type": "italic",
+                  "text": "italic"
+                }
+              ]
+            },
+            " idea. 🙂 ",
+            {
+              "type": "url",
+              "text": {
+                "type": "bold",
+                "text": "Link [label]"
+              },
+              "url": "https://example.com/a\\(b\\)?x=1&y=2"
+            },
+            ". ",
+            {
+              "type": "email_address",
+              "text": "email",
+              "email_address": "user@example.com"
+            },
+            " and ",
+            {
+              "type": "phone_number",
+              "text": "phone",
+              "phone_number": "+123456789"
+            },
+            "."
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "literal-code",
+    "markdown": "Literal \\*stars\\*, \\[brackets\\], \\<tag\\> and & text. `**literal**` and `` `tick` ``.",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": [
+            "Literal *stars*, [brackets], \\<tag> and & text. ",
+            {
+              "type": "code",
+              "text": "**literal**"
+            },
+            " and ",
+            {
+              "type": "code",
+              "text": "`tick`"
+            },
+            "."
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "lists-quotes",
+    "markdown": "3. third\n4. fourth\n   - nested one\n   - nested two\n\n- [ ] pending\n- [x] done\n\n> **Quote**\n>\n> Second paragraph.",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            {
+              "label": "3.",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "third"
+                }
+              ],
+              "type": "1",
+              "value": 3
+            },
+            {
+              "label": "4.",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "fourth"
+                },
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "label": "•",
+                      "blocks": [
+                        {
+                          "type": "paragraph",
+                          "text": "nested one"
+                        }
+                      ]
+                    },
+                    {
+                      "label": "•",
+                      "blocks": [
+                        {
+                          "type": "paragraph",
+                          "text": "nested two"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "type": "1",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "label": "•",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "pending"
+                }
+              ],
+              "has_checkbox": true
+            },
+            {
+              "label": "•",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "done"
+                }
+              ],
+              "has_checkbox": true,
+              "is_checked": true
+            }
+          ]
+        },
+        {
+          "type": "blockquote",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": {
+                "type": "bold",
+                "text": "Quote"
+              }
+            },
+            {
+              "type": "paragraph",
+              "text": "Second paragraph."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "table",
+    "markdown": "| Heading | Value |\n|:---|---:|\n|one|A \\| B|\n|two|**C**|",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "table",
+          "cells": [
+            [
+              {
+                "text": "Heading",
+                "is_header": true,
+                "align": "left",
+                "valign": "middle"
+              },
+              {
+                "text": "Value",
+                "is_header": true,
+                "align": "right",
+                "valign": "middle"
+              }
+            ],
+            [
+              {
+                "text": "one",
+                "align": "left",
+                "valign": "middle"
+              },
+              {
+                "text": "A | B",
+                "align": "right",
+                "valign": "middle"
+              }
+            ],
+            [
+              {
+                "text": "two",
+                "align": "left",
+                "valign": "middle"
+              },
+              {
+                "text": {
+                  "type": "bold",
+                  "text": "C"
+                },
+                "align": "right",
+                "valign": "middle"
+              }
+            ]
+          ],
+          "is_bordered": true,
+          "is_striped": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "footer",
+    "markdown": "Title\n\nSummary\n\nBody with [link](https://example.com).\n\nCategory: personal\nTags: go, sqlite",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Title"
+        },
+        {
+          "type": "paragraph",
+          "text": "Summary"
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            "Body with ",
+            {
+              "type": "url",
+              "text": "link",
+              "url": "https://example.com/"
+            },
+            "."
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Category: personal Tags: go, sqlite"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unsupported-format",
+    "markdown": "Text with <u>underlining and a [link](https://example.com/u)</u>, ||spoiler|| and ==highlight==.",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": [
+            "Text with ",
+            {
+              "type": "underline",
+              "text": [
+                "underlining and a ",
+                {
+                  "type": "url",
+                  "text": "link",
+                  "url": "https://example.com/u"
+                }
+              ]
+            },
+            ", ",
+            {
+              "type": "spoiler",
+              "text": "spoiler"
+            },
+            " and ",
+            {
+              "type": "marked",
+              "text": "highlight"
+            },
+            "."
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "details",
+    "markdown": "<details><summary>More **information**</summary>\n\nParagraph with a [link](https://example.com/details).\n\n</details>",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "details",
+          "summary": [
+            "More ",
+            {
+              "type": "bold",
+              "text": "information"
+            }
+          ],
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": [
+                "Paragraph with a ",
+                {
+                  "type": "url",
+                  "text": "link",
+                  "url": "https://example.com/details"
+                },
+                "."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "generated-web-card",
+    "markdown": "# Round-trip preview\n\nA short summary.\n\n## Section\nA **bold** idea with [link](https://example.com).\n\n> Quoted text.\n\n- first\n- second\n\n```go\nfmt.Println(\"hello\")\n```\n\n---\n\n![](tg://photo?id=newspaperbot_preview)\n\n**[Web card title](https://example.com/card)**\n\nCard description\\.\n\n---\n\n`#1`\n\n**Category:** development\n\n**Tags:** go",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "Round-trip preview",
+          "size": 1
+        },
+        {
+          "type": "paragraph",
+          "text": "A short summary."
+        },
+        {
+          "type": "heading",
+          "text": "Section",
+          "size": 2
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            "A ",
+            {
+              "type": "bold",
+              "text": "bold"
+            },
+            " idea with ",
+            {
+              "type": "url",
+              "text": "link",
+              "url": "https://example.com/"
+            },
+            "."
+          ]
+        },
+        {
+          "type": "blockquote",
+          "blocks": [
+            {
+              "type": "paragraph",
+              "text": "Quoted text."
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "label": "•",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "first"
+                }
+              ]
+            },
+            {
+              "label": "•",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "second"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "pre",
+          "text": "fmt.Println(\"hello\")",
+          "language": "go"
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "photo",
+          "photo": [
+            {
+              "file_id": "test-rich-photo-90",
+              "file_unique_id": "test-rich-unique-90",
+              "file_size": 312,
+              "width": 90,
+              "height": 45
+            },
+            {
+              "file_id": "test-rich-photo-128",
+              "file_unique_id": "test-rich-unique-128",
+              "file_size": 334,
+              "width": 128,
+              "height": 64
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "type": "url",
+            "text": {
+              "type": "bold",
+              "text": "Web card title"
+            },
+            "url": "https://example.com/card"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "Card description."
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "paragraph",
+          "text": {
+            "type": "code",
+            "text": "#1"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            {
+              "type": "bold",
+              "text": "Category:"
+            },
+            " development"
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": [
+            {
+              "type": "bold",
+              "text": "Tags:"
+            },
+            " go"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "captioned-photo",
+    "markdown": "A photo.\n\n<figure><img src=\"tg://photo?id=newspaperbot_preview\"/><figcaption>Caption with <b>emphasis</b> and <a href=\"https://example.com/caption\">link</a>.<cite>Credit</cite></figcaption></figure>\n\nOrdinary text.",
+    "rich_message": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "A photo."
+        },
+        {
+          "type": "photo",
+          "photo": [
+            {
+              "file_id": "test-rich-photo-90",
+              "file_unique_id": "test-rich-unique-90",
+              "file_size": 312,
+              "width": 90,
+              "height": 45
+            },
+            {
+              "file_id": "test-rich-photo-128",
+              "file_unique_id": "test-rich-unique-128",
+              "file_size": 334,
+              "width": 128,
+              "height": 64
+            }
+          ],
+          "caption": {
+            "text": [
+              "Caption with ",
+              {
+                "type": "bold",
+                "text": "emphasis"
+              },
+              " and ",
+              {
+                "type": "url",
+                "text": "link",
+                "url": "https://example.com/caption"
+              },
+              "."
+            ],
+            "credit": "Credit"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "Ordinary text."
+        }
+      ]
+    }
+  }
+]

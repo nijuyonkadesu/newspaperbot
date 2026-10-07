@@ -47,9 +47,9 @@ text only and never becomes part of frontmatter. Categories preserve spelling
 and case and must occupy one line. Tags must be lowercase letters/numbers
 separated by single hyphens, matching the portfolio's validation. `Tags: -`
 means none. Bare two-line footers still require existing category/tag names;
-unknown bare lines remain body text to avoid misinterpreting prose. Appends
-remain verbatim body additions; native edits to the original full message can
-change its footer.
+unknown bare lines remain body text to avoid misinterpreting prose. Footers also
+work in multiline additions and edited messages. Single-line additions stay
+body text. Recognized footer lines update selections and are removed from the body.
 
 ## Publish and recovery
 
@@ -64,7 +64,7 @@ For each publication, the worker:
 2. Builds `content/tweets/NNN-slug.md` from the newest remote numbering. Numbers
    have at least three digits. Slugs are lowercase ASCII words separated by
    hyphens; duplicates get a numeric suffix. A title with no ASCII words uses
-   `note-NNN`. The publication date is frozen when queued.
+   `note-NNN`. The publication date comes from the Publish action.
 3. Writes YAML frontmatter: `type: tweet`, `title`, `slug`, quoted `YYYY-MM-DD`
    date, `summary`, `category`, and `tags`, followed by the saved Markdown body.
 4. Installs dependencies with `npm ci --ignore-scripts` when the lockfile changes,

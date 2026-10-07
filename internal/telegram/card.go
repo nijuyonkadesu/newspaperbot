@@ -138,7 +138,7 @@ func overview(d post.Draft) string {
 		tags = "no tags"
 	}
 	text := fmt.Sprintf("<b>%s</b>\n%s\n\n<blockquote>%s</blockquote>",
-		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(post.RewriteImages(d.Content, func(string, string) string { return "[Photo]" }), 650)))
+		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(post.RewriteImages(d.TelegramContent(), func(string, string) string { return "[Photo]" }), 650)))
 	if d.Slot > 0 {
 		text += fmt.Sprintf("\n\n<code>#%d</code> <i>· %s · %s</i>", d.Slot, html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 	} else {
@@ -213,7 +213,7 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 	case d.View == "replace" || d.Step == post.Compose:
 		source := example
 		if d.View == "replace" && d.Title != "" {
-			source = d.Title + "\n\n" + d.Summary + "\n\n" + d.Content
+			source = d.Title + "\n\n" + d.Summary + "\n\n" + d.TelegramContent()
 		}
 		tags := strings.Join(d.TagLabels(), ", ")
 		if tags == "" {

@@ -18,7 +18,7 @@ func TestEntityMarkdownPreservesTextLinksAndUTF16Offsets(t *testing.T) {
 		{Type: models.MessageEntityTypeUnderline, Offset: 17, Length: 10},
 		{Type: models.MessageEntityTypeItalic, Offset: 1, Length: 1}, // Inside the emoji's surrogate pair.
 	})
-	if want := "🙂 See [**Linux**](https://linux.example/a\\)b) and underlined"; got != want || !incomplete {
+	if want := "🙂 See [**Linux**](https://linux.example/a%29b) and underlined"; got != want || !incomplete {
 		t.Fatalf("conversion = %q, incomplete = %v; want %q, true", got, incomplete, want)
 	}
 }

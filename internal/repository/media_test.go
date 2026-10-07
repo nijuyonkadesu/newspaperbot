@@ -52,7 +52,7 @@ func TestPublishCommitsPhotoWithMarkdownAndRecoveryDoesNotRetrieveAgain(t *testi
 		}
 	}
 	committed := command(t, f.remote, "git", "show", job.CommitSHA+":"+job.Filename)
-	if !strings.Contains(committed, "![]("+post.ImageURLDir+name+")\n\nCaption") || strings.Contains(committed, "private-photo-id") || strings.Contains(committed, "tg://") {
+	if !strings.Contains(committed, "![]("+post.ImageURLDir+name+")\n\n:::caption\nCaption\n:::") || strings.Contains(committed, "private-photo-id") || strings.Contains(committed, "tg://") {
 		t.Fatal("Markdown lost the image/caption or leaked Telegram-only data")
 	}
 	data, err := os.ReadFile(filepath.Join(f.cache, post.ImageAssetDir, name))

@@ -254,7 +254,8 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			}
 			d.View, d.Notice = "", ""
 			if len(fields) > 1 {
-				text, issue := importText(m)
+				text, issue, images := importText(m)
+				rememberRichImages(&d, images)
 				a.refreshChoices(ctx, b, &d)
 				if err := d.Replace(post.Source{MessageID: m.ID, UpdateID: updateID, Text: text}); err != nil {
 					d.Notice = err.Error()
@@ -442,7 +443,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		}
 		return a.notice(ctx, b, &d, "Saving in progress · content is locked")
 	}
-	text, issue := importText(m)
+	text, issue, images := importText(m)
 	if text == "" {
 		if issue == "" {
 			return nil
@@ -454,6 +455,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		}
 		return a.render(ctx, b, &d)
 	}
+	rememberRichImages(&d, images)
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
 	if m.ReplyToMessage != nil {
 		target := m.ReplyToMessage.ID
@@ -531,7 +533,7 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 		}
 		return nil
 	}
-	text, issue := importText(m)
+	text, issue, images := importText(m)
 	if text == "" {
 		if issue == "" {
 			return nil
@@ -543,6 +545,7 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 		return a.render(ctx, b, &d)
 	}
 	a.refreshChoices(ctx, b, &d)
+	rememberRichImages(&d, images)
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
 	for _, old := range d.Sources {
 		if old.MessageID == m.ID && old.MediaFor != 0 {

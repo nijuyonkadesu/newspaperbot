@@ -71,7 +71,7 @@ func (d Draft) PortfolioMarkdown() ([]byte, error) {
 		return nil, err
 	}
 	header := fmt.Sprintf("---\ntype: tweet\ntitle: %s\nslug: %s\ndate: %s\nsummary: %s\ncategory: %s\ntags: %s\n---\n\n", quote(d.Title), quote(slug), quote(date.UTC().Format("2006-01-02")), quote(d.Summary), quote(d.Category), encoded)
-	return []byte(header + d.Content), nil
+	return []byte(header + d.exportContent()), nil
 }
 
 func (d Draft) CategoryLabel() string {

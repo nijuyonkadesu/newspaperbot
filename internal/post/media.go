@@ -120,6 +120,10 @@ func (d Draft) ImageFiles() map[string]string {
 // RewriteImages only rewrites bot-owned Markdown image destinations, leaving
 // fenced and inline code, ordinary links, and external images untouched.
 func RewriteImages(markdown string, replace func(string, string) string) string {
+	return rewriteImages(markdown, func(name, alt string, _, _ int) string { return replace(name, alt) })
+}
+
+func rewriteImages(markdown string, replace func(name, alt string, start, end int) string) string {
 	var out strings.Builder
 	var fence byte
 	var width int
@@ -172,7 +176,7 @@ func RewriteImages(markdown string, replace func(string, string) string) string 
 					if close := strings.IndexByte(line[start:], ')'); close >= 0 {
 						name := line[start : start+close]
 						if ValidImageAsset(name) {
-							if target := replace(name, line[i+2:i+2+end]); target != "" {
+							if target := replace(name, line[i+2:i+2+end], startOffset+i, startOffset+start+close+1); target != "" {
 								out.WriteString(target)
 								i = start + close + 1
 								continue
@@ -207,7 +211,7 @@ func closingBackticks(text string, width int) int {
 	return -1
 }
 
-func (d Draft) mediaBody(source Source, links map[int]string, attribution bool) string {
+func (d Draft) mediaBody(source Source, links map[int]string, attribution, captionBlocks bool) string {
 	m := source.Media
 	body := ""
 	if m.linkOnly() {
@@ -224,7 +228,11 @@ func (d Draft) mediaBody(source Source, links map[int]string, attribution bool) 
 		body = "![](" + ImageURLDir + m.Asset + ")"
 	}
 	if source.Text != "" {
-		body += "\n\n" + source.Text
+		caption := source.Text
+		if captionBlocks && !m.linkOnly() {
+			caption = ImageCaption(caption)
+		}
+		body += "\n\n" + caption
 	}
 	if attribution && m.Origin != "" && (!m.linkOnly() || links[source.MessageID] != m.Origin) {
 		body += "\n\n[Source](" + escapeMediaURL(m.Origin) + ")"

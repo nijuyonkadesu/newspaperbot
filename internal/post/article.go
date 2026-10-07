@@ -61,7 +61,7 @@ func ReadArticle(filename, text string) (Article, error) {
 
 // SameArticle compares the author-editable fields of two article versions.
 func SameArticle(a, b Draft) bool {
-	return a.Title == b.Title && a.Summary == b.Summary && a.Content == b.Content &&
+	return a.Title == b.Title && a.Summary == b.Summary && a.exportContent() == b.exportContent() &&
 		a.Category == b.Category && slices.Equal(a.Tags, b.Tags)
 }
 
@@ -133,6 +133,6 @@ func (d Draft) articleMarkdown() ([]byte, error) {
 		return nil, err
 	}
 	out.WriteString("---\n\n")
-	out.WriteString(d.Content)
+	out.WriteString(d.exportContent())
 	return out.Bytes(), nil
 }

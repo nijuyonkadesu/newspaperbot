@@ -224,8 +224,9 @@ your membership; it applies to future publications.
 | --- | --- |
 | Reply to a draft/edit card with your photo | Photo joins that post. Caption appears beneath it; editing the caption updates the card. |
 | Forward a photo album | Photos stay together, in message order. Public source gets a link; captions stay with their media. |
+| Forward a rich message | Text, links, headings, lists, quotes, tables, and photos join the post. Unsupported formatting appears under **Review** on the same card. |
 | <kbd>Preview</kbd> | Photos appear using Telegram's existing files. No image download yet. |
-| <kbd>Publish</kbd> / <kbd>Save changes</kbd> | Retrieves new images from Bot API; commits them with Markdown and taxonomy. The site shows them under `/assets/images/posts/`. |
+| <kbd>Publish</kbd> / <kbd>Save changes</kbd> | Retrieves new images from Bot API; commits them with Markdown and taxonomy. Site captions appear centered beneath their photos. |
 | Send/forward a video | Uses its public source link. Without one: **Review** · Video needs a public URL. |
 | Reply to that video with `https://…` | Sets its link. Edit your reply to change it. Other attachments use the same link flow. |
 | Reply to a media message with `/remove` | Removes that item and caption; clears source and command where allowed. |
@@ -236,5 +237,5 @@ image files are supported: up to 20 images, 5 MiB and 16 megapixels each.
 Videos and other attachments publish as links. Late album items become pending
 article edits; use **Save changes** to include them.
 
-> **Note:** Rich-message forwards still require review. Deleting a source in
+> **Note:** Unsupported rich formatting requires review. Deleting a source in
 > Telegram doesn't update the post; use `/remove`.
