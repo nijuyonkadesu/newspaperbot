@@ -142,9 +142,9 @@ func (r *Repository) Catalog(context.Context) (metadata.Catalog, error) {
 }
 
 func (r *Repository) Refresh(ctx context.Context) error {
-	if !r.mu.TryLock() {
-		return nil
-	} // Publishing already fetches; authoring uses the last valid snapshot.
+	// Wait for any in-flight fetch or publish so a manual refresh never
+	// silently returns the stale snapshot.
+	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.fetch(ctx); err != nil {
 		return err

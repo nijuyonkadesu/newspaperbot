@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"newspaperbot/internal/linkpreview"
 	"newspaperbot/internal/metadata"
 	"newspaperbot/internal/post"
 	"newspaperbot/internal/repository"
@@ -52,13 +53,15 @@ func run() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
-	app := &telegram.App{OwnerID: owner, Store: db, OutputDir: dir, WriteFile: post.WriteFile, Metadata: metadata.Loader{
+	app := &telegram.App{OwnerID: owner, Store: db, OutputDir: dir, WriteFile: post.WriteFile, Previews: linkpreview.New(nil), Metadata: metadata.Loader{
 		NumberSource:     env("BLOG_NUMBER_SOURCE", "testdata/blog-number.json"),
 		CategoriesSource: env("CATEGORIES_SOURCE", "testdata/categories.json"),
 		TagsSource:       env("TAGS_SOURCE", "testdata/tags.json"),
 	}}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	app.PreviewContext = ctx
+	defer app.ClosePreviews()
 	if os.Getenv("PORTFOLIO_GIT_TOKEN") != "" || os.Getenv("PORTFOLIO_REPO_URL") != "" {
 		setupCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		repo, err := repository.Open(setupCtx, repository.Config{

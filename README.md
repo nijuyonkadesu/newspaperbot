@@ -175,6 +175,7 @@ Publish/Save adds new names to the category/tag lists; `*` is never stored.
 | Reply to the `/posts` output with `268` | List jumps to `#268`; your reply disappears. |
 | <kbd>Refresh</kbd> / `/posts` again | Reload current range / replace list with newest articles. |
 | <kbd>Preview #268</kbd> → <kbd>Back</kbd> | Read article → return to list; no edit started. |
+| Post contains `[Guide](https://site.example/guide)` → <kbd>Preview</kbd> | Markdown appears immediately; the URL card fills in when available. Switching posts cancels the pending card. Channel/group posts get the same URL card. Downloads and Git files stay unchanged. |
 | `/newpost` while draft `#1` has text | `#2`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Cancel draft</kbd><br><br>Draft `#1` stays saved; reply to either card to append there. |
 | `/drafts` | **Saved drafts** · `/resume <number>`<br>`1 · A useful trick`<br>`2 · Untitled` |
 | `/resume 1`, including after a restart | Reopens saved draft `#1`.<br>**A useful trick**<br>`#1` · *concept · go*<br><kbd>Publish</kbd> <kbd>Preview</kbd><br><br>Further unthreaded text goes here. |

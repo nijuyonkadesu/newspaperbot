@@ -127,7 +127,7 @@ func (a *App) deliver(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 		if err := a.beforeSend(ctx, d); err != nil {
 			return err
 		}
-		message, err := b.SendRichMessage(ctx, &bot.SendRichMessageParams{ChatID: d.ChannelID, RichMessage: models.InputRichMessage{Markdown: d.RichMarkdown()}})
+		message, err := a.writePreview(ctx, b, d.ChannelID, 0, "", nil, &models.InputRichMessage{Markdown: d.RichMarkdown()}, false)
 		if errors.Is(err, bot.ErrorBadRequest) {
 			d.DocumentMode = true
 			d.Delivery = "pending"
@@ -152,6 +152,7 @@ func (a *App) deliver(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 			return a.deliveryError(ctx, b, d, err)
 		}
 		d.SummaryMessageID = message.ID
+		a.queuePreview(ctx, b, previewTarget{d.ChannelID, message.ID}, nil, models.InputRichMessage{Markdown: "# " + d.Title + "\n\n" + d.Summary}, d.RichMarkdown(), false)
 		d.Delivery = "pending"
 		if err := a.Store.Save(ctx, d); err != nil {
 			return err

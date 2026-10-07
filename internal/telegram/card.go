@@ -69,7 +69,6 @@ func previewMarkdown(d post.Draft) string {
 	if tags == "" {
 		tags = "none"
 	}
-	escape := func(text string) string { return bot.EscapeMarkdown(html.EscapeString(text)) }
 	identity := fmt.Sprintf("`#%d`", d.Slot)
 	if d.Number != 0 {
 		label := "Live"
@@ -78,14 +77,14 @@ func previewMarkdown(d post.Draft) string {
 		}
 		identity = fmt.Sprintf("**%s** · `#%d` · %s · %s", label, d.Number, articleAge(d), d.PublishedAt.Format("2006-01-02"))
 	}
-	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n%s\n\n**Category:** %s\n\n**Tags:** %s", identity, escape(d.CategoryLabel()), escape(tags)) + messageIssuesMarkdown(d.MessageIssues) + statusMarkdown(d.Notice)
+	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n%s\n\n**Category:** %s\n\n**Tags:** %s", identity, escapeRichText(d.CategoryLabel()), escapeRichText(tags)) + messageIssuesMarkdown(d.MessageIssues) + statusMarkdown(d.Notice)
 }
 
 func statusMarkdown(status string) string {
 	if status == "" {
 		return ""
 	}
-	return "\n\n**Status** · " + bot.EscapeMarkdown(status)
+	return "\n\n**Status** · " + escapeRichText(status)
 }
 
 func messageIssuesMarkdown(issues []post.MessageIssue) string {
@@ -95,7 +94,7 @@ func messageIssuesMarkdown(issues []post.MessageIssue) string {
 	var text strings.Builder
 	text.WriteString("\n\n**Review**\n")
 	for i, issue := range issues {
-		fmt.Fprintf(&text, "\n%d. %s · `/remove %d`", i+1, bot.EscapeMarkdown(issue.Reason), issue.MessageID)
+		fmt.Fprintf(&text, "\n%d. %s · `/remove %d`", i+1, escapeRichText(issue.Reason), issue.MessageID)
 	}
 	return text.String()
 }
@@ -300,6 +299,8 @@ func (a *App) prompt(ctx context.Context, b *bot.Bot, d post.Draft) error {
 // RestoreCard upgrades the selected card and other recent unfinished cards.
 // Existing views survive restart; drafts without a card are not announced.
 func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	active, err := a.Store.Active(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -311,9 +312,6 @@ func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
 			if err := a.Store.Save(ctx, &active); err != nil {
 				return err
 			}
-		}
-		if err := a.render(ctx, b, &active); err != nil {
-			return err
 		}
 	}
 	drafts, err := a.Store.Cards(ctx)
@@ -336,6 +334,10 @@ func (a *App) RestoreCard(ctx context.Context, b *bot.Bot) error {
 		if err := a.render(ctx, b, &d); err != nil {
 			failures = append(failures, err)
 		}
+	}
+	// Restore the selected preview last so other cards don't cancel its fetch.
+	if active.ID != 0 {
+		failures = append(failures, a.render(ctx, b, &active))
 	}
 	return errors.Join(failures...)
 }
@@ -415,6 +417,7 @@ func (a *App) writeCard(ctx context.Context, b *bot.Bot, d *post.Draft, text str
 }
 
 func (a *App) deleteCard(ctx context.Context, b *bot.Bot, id int) bool {
+	a.cancelPreview(previewTarget{a.OwnerID, id})
 	if _, err := b.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: a.OwnerID, MessageID: id}); err != nil {
 		// Old cards may exceed the deletion window. Remove their controls instead.
 		a.logError(b, "card cleanup", err)

@@ -32,23 +32,28 @@ type apiCall struct {
 	Reaction                                []models.ReactionType
 	ReplyParameters                         *models.ReplyParameters
 	DisableNotification                     bool
+	RichImage                               []byte
+	RichMedia                               []json.RawMessage
 }
 
 type fakeAPI struct {
-	mu               sync.Mutex
-	calls            []apiCall
-	failures         map[string]int
-	messages         map[int]apiCall
-	nextID           int
-	ownerAbsent      bool
-	botCannotPost    bool
-	botNotAdmin      bool
-	editError        string
-	replyError       string
-	deleteRejected   bool
-	richRejected     bool
-	richUnavailable  bool
-	reactionRejected bool
+	mu                   sync.Mutex
+	calls                []apiCall
+	failures             map[string]int
+	messages             map[int]apiCall
+	nextID               int
+	ownerAbsent          bool
+	botCannotPost        bool
+	botNotAdmin          bool
+	editError            string
+	replyError           string
+	deleteRejected       bool
+	richRejected         bool
+	richUnavailable      bool
+	reactionRejected     bool
+	imageRejected        bool
+	rejectRichContaining string
+	rejectRichCode       int
 }
 
 func (f *fakeAPI) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -80,12 +85,34 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if raw := r.FormValue("rich_message"); raw != "" {
-		var rich models.InputRichMessage
+		var rich struct {
+			Markdown string            `json:"markdown"`
+			Media    []json.RawMessage `json:"media"`
+		}
 		if err := json.Unmarshal([]byte(raw), &rich); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
 		call.RichMarkdown = rich.Markdown
+		call.RichMedia = rich.Media
+		if r.MultipartForm != nil {
+			for name, files := range r.MultipartForm.File {
+				if !strings.HasPrefix(name, "newspaperbot-preview.") {
+					continue
+				}
+				file, err := files[0].Open()
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+				call.RichImage, err = io.ReadAll(file)
+				file.Close()
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+			}
+		}
 	}
 	if raw := r.FormValue("reply_markup"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &call.Markup)
@@ -167,6 +194,14 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if f.imageRejected && len(call.RichImage) != 0 || f.rejectRichContaining != "" && strings.Contains(call.RichMarkdown, f.rejectRichContaining) {
+		code := f.rejectRichCode
+		if code == 0 {
+			code = 400
+		}
+		reject(code, "optional preview rejected")
+		return
+	}
 	var result any
 	switch call.Method {
 	case "getChat":
@@ -215,7 +250,7 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		f.nextID++
 		call.ResultID = f.nextID
-		if call.ChatID > 0 {
+		if call.ChatID != 0 {
 			f.messages[call.ResultID] = call
 		}
 		result = map[string]any{"message_id": call.ResultID, "date": 1, "chat": map[string]any{"id": call.ChatID, "type": "private"}}
@@ -276,10 +311,10 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{OwnerID: 42, Store: s, OutputDir: dir, WriteFile: post.WriteFile, Metadata: metadata.Loader{
+	app := &App{OwnerID: 42, Store: s, OutputDir: dir, WriteFile: post.WriteFile, PreviewContext: t.Context(), Metadata: metadata.Loader{
 		NumberSource: "../../testdata/blog-number.json", CategoriesSource: "../../testdata/categories.json", TagsSource: "../../testdata/tags.json",
 	}}
-	t.Cleanup(func() { app.Store.Close() })
+	t.Cleanup(func() { app.ClosePreviews(); app.Store.Close() })
 	return &harness{t: t, app: app, bot: b, api: api}
 }
 
@@ -302,6 +337,7 @@ func (h *harness) active() post.Draft {
 
 func (h *harness) restart() {
 	h.t.Helper()
+	h.app.ClosePreviews()
 	if err := h.app.Store.Close(); err != nil {
 		h.t.Fatal(err)
 	}

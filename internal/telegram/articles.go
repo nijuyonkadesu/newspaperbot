@@ -38,6 +38,7 @@ func (a *App) liveArticles(ctx context.Context) ([]post.Article, error) {
 }
 
 func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice string, replace bool) error {
+	a.cancelOwnerPreview()
 	if a.Repository == nil {
 		return a.replyHTML(ctx, b, "<b>Live articles</b>\nRepository publishing is not configured.")
 	}

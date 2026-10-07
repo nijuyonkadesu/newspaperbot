@@ -11,23 +11,30 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"newspaperbot/internal/linkpreview"
 	"newspaperbot/internal/metadata"
 	"newspaperbot/internal/post"
 	"newspaperbot/internal/store"
 )
 
 type App struct {
-	mu         sync.Mutex
-	taxonomyMu sync.Mutex
-	OwnerID    int64
-	Store      *store.Store
-	Metadata   metadata.Loader
-	OutputDir  string
-	WriteFile  func(string, []byte) error
-	Repository Repository
+	mu             sync.Mutex
+	taxonomyMu     sync.Mutex
+	previewJobs    map[previewTarget]*previewJob
+	previewWG      sync.WaitGroup
+	ownerPreview   atomic.Pointer[previewJob]
+	OwnerID        int64
+	Store          *store.Store
+	Metadata       metadata.Loader
+	OutputDir      string
+	WriteFile      func(string, []byte) error
+	Repository     Repository
+	Previews       *linkpreview.Client
+	PreviewContext context.Context
 }
 
 type Repository interface {
@@ -83,6 +90,30 @@ Undo doesn't revert edits, replacements, or taxonomy.
 Deleted sources: /remove <message ID>.`
 
 func (a *App) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+	// Cancel before acquiring mu: an enrichment edit may already be in flight.
+	// Read-only commands such as /download don't interrupt a pending preview.
+	if q := update.CallbackQuery; q != nil {
+		parts := strings.Split(q.Data, ":")
+		action := parts[len(parts)-1]
+		if q.From.ID == a.OwnerID && a.privateChat(q.Message.Message) && action != "download" && !strings.HasPrefix(action, "source-") {
+			a.cancelOwnerPreview()
+		}
+	} else if a.allowed(update.EditedMessage) {
+		a.cancelOwnerPreview()
+	} else if a.allowed(update.Message) {
+		fields := strings.Fields(update.Message.Text)
+		if len(fields) > 0 {
+			command := strings.SplitN(fields[0], "@", 2)[0]
+			switch command {
+			case "/newpost", "/resume", "/posts", "/edit", "/cancel", "/delete", "/replace", "/save", "/publish", "/undo", "/remove":
+				a.cancelOwnerPreview()
+			default:
+				if !strings.HasPrefix(command, "/") {
+					a.cancelOwnerPreview()
+				}
+			}
+		}
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var err error

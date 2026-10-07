@@ -1,0 +1,9 @@
+{
+  "author_name": "miscjunk",
+  "html": "<blockquote class=\"reddit-embed-bq\" style=\"height:316px\" >\n<a href=\"https://www.reddit.com/r/vim/comments/mrpoa3/git_workflow_with_understanding_file_history/\">Git workflow with understanding file history (fugitive.vim, gv.vim, vim-flog, .. others?)</a><br> by\n<a href=\"https://www.reddit.com/user/miscjunk/\">u/miscjunk</a> in\n<a href=\"https://www.reddit.com/r/vim/\">vim</a>\n</blockquote>\n<script async src=\"https://embed.reddit.com/widgets.js\" charset=\"UTF-8\"></script>",
+  "provider_name": "reddit",
+  "provider_url": "https://www.reddit.com",
+  "title": "Git workflow with understanding file history (fugitive.vim, gv.vim, vim-flog, .. others?)",
+  "type": "rich",
+  "height": 316
+}

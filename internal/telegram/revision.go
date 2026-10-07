@@ -63,13 +63,17 @@ func (a *App) finishRevision(ctx context.Context, b *bot.Bot, d *post.Draft) err
 			if done || id == 0 {
 				continue
 			}
+			a.cancelPreview(previewTarget{d.ChannelID, id})
 			var err error
 			if summary {
 				_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: d.ChannelID, MessageID: id, Text: d.Title + "\n\n" + d.Summary})
+				if err == nil || unchangedMessage(err) {
+					a.queuePreview(ctx, b, previewTarget{d.ChannelID, id}, nil, models.InputRichMessage{Markdown: "# " + d.Title + "\n\n" + d.Summary}, d.RichMarkdown(), false)
+				}
 			} else {
 				document := d.DocumentMode || utf8.RuneCountInString(d.RichMarkdown()) > 32768
 				if !document {
-					_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: d.ChannelID, MessageID: id, RichMessage: &models.InputRichMessage{Markdown: d.RichMarkdown()}})
+					_, err = a.writePreview(ctx, b, d.ChannelID, id, "", nil, &models.InputRichMessage{Markdown: d.RichMarkdown()}, false)
 					document = errors.Is(err, bot.ErrorBadRequest) && !missingCard(err) && !unchangedMessage(err)
 				}
 				if document {
