@@ -23,6 +23,8 @@ type Source struct {
 	Text       string
 	Full       bool
 	ParseError string // Invalid post or taxonomy; do not publish the previous snapshot.
+	Media      *Media `json:",omitempty"`
+	MediaFor   int    `json:",omitempty"` // A reply supplying the public link for a video source.
 }
 
 type MessageIssue struct {
@@ -42,20 +44,24 @@ type Revision struct {
 
 // Draft also holds publication progress so interrupted exports can be recovered.
 type Draft struct {
-	ID                int64 // Stable database identity; never shown to the owner.
-	Slot              int64 `json:"-"` // Reusable owner-facing number while this is a draft.
-	ComposerVersion   int
-	CardID            int
-	SourceReplyID     int // Temporary native reply used to locate a source message.
-	SourceReplyToID   int
-	View              string
-	Preview           bool // Preferred review mode, retained while temporary panels are open.
-	Notice            string
-	Invalid           string
-	Sources           []Source
-	MessageIssues     []MessageIssue
-	ReplacementSource *Source
-	BaseContent       string
+	ID                 int64 // Stable database identity; never shown to the owner.
+	Slot               int64 `json:"-"` // Reusable owner-facing number while this is a draft.
+	ComposerVersion    int
+	CardID             int
+	SourceReplyID      int // Temporary native reply used to locate a source message.
+	SourceReplyToID    int
+	View               string
+	Preview            bool // Preferred review mode, retained while temporary panels are open.
+	Notice             string
+	Invalid            string
+	Sources            []Source
+	MessageIssues      []MessageIssue
+	ReplacementSource  *Source
+	BaseContent        string
+	Images             map[string]ImageRef `json:",omitempty"` // Telegram references for bot-owned assets.
+	LateMedia          []Source            `json:",omitempty"`
+	AlbumUpdatedAt     time.Time           `json:",omitzero"`
+	PublishRequestedAt time.Time           `json:",omitzero"`
 
 	Title            string
 	Summary          string
@@ -176,25 +182,38 @@ func (d *Draft) Replace(source Source) error {
 	source.Full = true
 	parsed.applyTaxonomy(d, &source)
 	d.Title, d.Summary, d.Content = parsed.title, parsed.summary, parsed.body
-	d.Sources, d.MessageIssues, d.BaseContent, d.ReplacementSource = []Source{source}, nil, "", nil
+	var pending []Source
+	if d.Step == Compose && d.View != "replace" {
+		for _, old := range d.Sources {
+			if old.Media != nil {
+				pending = append(pending, old)
+			}
+		}
+	}
+	d.Sources, d.MessageIssues, d.BaseContent, d.ReplacementSource = append([]Source{source}, pending...), nil, "", nil
 	d.Step, d.Notice, d.Invalid, d.PendingContent = Review, "", "", ""
 	d.ResetView()
-	return nil
+	d.PublishRequestedAt = time.Time{}
+	return d.rebuild()
 }
 
 func (d *Draft) Append(source Source) error {
 	if d.Locked() {
 		return errors.New("published posts are locked")
 	}
-	if strings.TrimSpace(source.Text) == "" {
+	if source.Media == nil && strings.TrimSpace(source.Text) == "" {
 		return errors.New("send text to append to the body")
 	}
-	parsed, err := parseFooter(source.Text, d.Categories, d.AvailableTags)
-	if err != nil {
-		source.ParseError = err.Error()
-	} else {
-		parsed.applyTaxonomy(d, &source)
+	if source.Media == nil && source.MediaFor == 0 {
+		d.PublishRequestedAt = time.Time{}
+		parsed, err := parseFooter(source.Text, d.Categories, d.AvailableTags)
+		if err != nil {
+			source.ParseError = err.Error()
+		} else {
+			parsed.applyTaxonomy(d, &source)
+		}
 	}
+	d.rememberImage(source.Media)
 	if len(d.Sources) == 0 {
 		d.BaseContent = d.Content
 	}
@@ -214,8 +233,16 @@ func (d *Draft) EditSource(source Source) bool {
 			return false
 		}
 		source.Full = old.Full
+		d.PublishRequestedAt = time.Time{}
 		var parsed parsedSource
 		var err error
+		source.MediaFor = old.MediaFor
+		if old.Media != nil || source.MediaFor != 0 {
+			d.rememberImage(source.Media)
+			d.Sources[i] = source
+			_ = d.rebuild()
+			return true
+		}
 		if source.Full {
 			parsed, err = parseSource(source.Text, d.Categories, d.AvailableTags)
 		} else {
@@ -237,6 +264,7 @@ func (d *Draft) Undo() error {
 	if d.Locked() || len(d.Sources) == 0 || d.Sources[len(d.Sources)-1].Full {
 		return errors.New("there is no appended message to undo")
 	}
+	d.PublishRequestedAt = time.Time{}
 	messageID := d.Sources[len(d.Sources)-1].MessageID
 	d.Sources = d.Sources[:len(d.Sources)-1]
 	d.MessageIssues = slices.DeleteFunc(d.MessageIssues, func(issue MessageIssue) bool { return issue.MessageID == messageID })
@@ -244,9 +272,17 @@ func (d *Draft) Undo() error {
 }
 
 func (d *Draft) RemoveSource(messageID int) error {
+	for i, source := range d.LateMedia {
+		if source.MessageID == messageID {
+			d.LateMedia = slices.Delete(d.LateMedia, i, i+1)
+			d.MessageIssues = slices.DeleteFunc(d.MessageIssues, func(issue MessageIssue) bool { return issue.MessageID == messageID })
+			return nil
+		}
+	}
 	if d.Locked() {
 		return errors.New("published posts are locked")
 	}
+	d.PublishRequestedAt = time.Time{}
 	for _, source := range d.Sources {
 		if source.MessageID == messageID && source.Full {
 			return errors.New("Original post · use /replace or /cancel")
@@ -255,7 +291,7 @@ func (d *Draft) RemoveSource(messageID int) error {
 
 	found, sourceRemoved := false, false
 	d.Sources = slices.DeleteFunc(d.Sources, func(source Source) bool {
-		remove := source.MessageID == messageID
+		remove := source.MessageID == messageID || source.MediaFor == messageID
 		found = found || remove
 		sourceRemoved = sourceRemoved || remove
 		return remove
@@ -283,12 +319,38 @@ func (d *Draft) RemoveSource(messageID int) error {
 func (d *Draft) rebuild() error {
 	d.Notice = ""
 	title, summary, body := d.Title, d.Summary, d.BaseContent
+	links, groups := d.mediaLinks(), map[string]bool{}
 	for _, source := range d.Sources {
+		if source.MediaFor != 0 {
+			continue
+		}
 		if source.ParseError != "" {
 			d.Invalid = "Fix the source message: " + source.ParseError
 			return errors.New(source.ParseError)
 		}
-		if source.Full {
+		if source.Media != nil {
+			group := source.Media.GroupID
+			if group != "" && groups[group] {
+				continue
+			}
+			members := []Source{source}
+			if group != "" {
+				groups[group] = true
+				members = nil
+				for _, member := range d.Sources {
+					if member.Media != nil && member.Media.GroupID == group {
+						members = append(members, member)
+					}
+				}
+				slices.SortFunc(members, func(a, b Source) int { return a.MessageID - b.MessageID })
+			}
+			for i, member := range members {
+				if body != "" {
+					body += "\n\n"
+				}
+				body += d.mediaBody(member, links, group == "" || i == len(members)-1)
+			}
+		} else if source.Full {
 			var err error
 			title, summary, body, err = ParseSource(source.Text)
 			if err != nil {
@@ -308,6 +370,9 @@ func (d *Draft) rebuild() error {
 	}
 	d.Title, d.Summary, d.Content = title, summary, body
 	d.Invalid, d.Notice, d.Step = "", "", Review
+	if d.Title == "" {
+		d.Step = Compose
+	}
 	d.ResetView()
 	return nil
 }
@@ -319,7 +384,7 @@ func (d Draft) Validate() error {
 	if strings.TrimSpace(d.Title) == "" || d.Number == 0 && strings.TrimSpace(d.Summary) == "" || strings.TrimSpace(d.Content) == "" || d.Category == "" {
 		return errors.New("send title, summary, and body together before publishing")
 	}
-	return nil
+	return d.ValidateMedia()
 }
 
 func (d Draft) Empty() bool {

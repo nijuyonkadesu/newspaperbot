@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -70,7 +71,7 @@ Optional footer: Category: name, then Tags: tag1, tag2 (or -).
 /edit <article number> — edit / resume article
 /save — save edits; keep article number, date, and URL
 /replace — replace entire post
-/undo — remove last appended text; keep chat message
+/undo — remove last addition; keep chat message
 /remove · /remove <message ID> — remove addition by reply / ID
 /download [article number] — download selected post / published article
 /publish — publish draft
@@ -101,6 +102,9 @@ func (a *App) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	} else if a.allowed(update.EditedMessage) {
 		a.cancelOwnerPreview()
 	} else if a.allowed(update.Message) {
+		if len(update.Message.Photo) != 0 || update.Message.Document != nil || update.Message.Video != nil || update.Message.Animation != nil {
+			a.cancelOwnerPreview()
+		}
 		fields := strings.Fields(update.Message.Text)
 		if len(fields) > 0 {
 			command := strings.SplitN(fields[0], "@", 2)[0]
@@ -422,6 +426,9 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			}
 		}
 	}
+	if handled, err := a.mediaMessage(ctx, b, m, updateID); handled {
+		return err
+	}
 	d, err := a.target(ctx, b, m)
 	if err != nil || d.ID == 0 {
 		return err
@@ -448,6 +455,19 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		return a.render(ctx, b, &d)
 	}
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
+	if m.ReplyToMessage != nil {
+		target := m.ReplyToMessage.ID
+		if target == d.SourceReplyID {
+			target = d.SourceReplyToID
+		}
+		for _, old := range d.Sources {
+			if old.MessageID == target && old.Media != nil && (old.Media.Kind == "video" || old.Media.Kind == "file") {
+				if link := mediaURL(m); link != "" {
+					source.MediaFor, source.Text = target, link
+				}
+			}
+		}
+	}
 	a.refreshChoices(ctx, b, &d)
 	if d.View == "replace" || d.Step == post.Compose {
 		if err := d.Replace(source); err != nil {
@@ -483,10 +503,32 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 		return err
 	}
 	if d.Locked() {
+		if source, issue, supported := importMedia(m, updateID); supported {
+			for i, old := range d.LateMedia {
+				if old.MessageID == m.ID && source.NewerThan(old) {
+					d.LateMedia[i] = source
+					setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
+					if err := a.Store.Save(ctx, &d); err != nil {
+						return err
+					}
+					return a.render(ctx, b, &d)
+				}
+			}
+		}
 		return nil
 	}
 	version := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate}
 	if !messageEditNewer(d, version) {
+		return nil
+	}
+	if source, issue, supported := importMedia(m, updateID); supported {
+		if d.EditSource(source) {
+			setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
+			if err := a.Store.Save(ctx, &d); err != nil {
+				return err
+			}
+			return a.render(ctx, b, &d)
+		}
 		return nil
 	}
 	text, issue := importText(m)
@@ -502,6 +544,14 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 	}
 	a.refreshChoices(ctx, b, &d)
 	source := post.Source{MessageID: m.ID, UpdateID: updateID, EditDate: m.EditDate, Text: text}
+	for _, old := range d.Sources {
+		if old.MessageID == m.ID && old.MediaFor != 0 {
+			source.Text = mediaURL(m)
+			if source.Text == "" {
+				source.Text = text
+			}
+		}
+	}
 	if pending := d.ReplacementSource; pending != nil && pending.MessageID == m.ID {
 		if !source.NewerThan(*pending) {
 			return nil
@@ -638,6 +688,9 @@ func (a *App) action(ctx context.Context, b *bot.Bot, d *post.Draft, action stri
 			return a.notice(ctx, b, d, "Source unavailable · use the current controls")
 		}
 		return a.showSource(ctx, b, d, id)
+	}
+	if action != "publish" && action != "save" && action != "preview" && action != "back" && action != "download" {
+		d.PublishRequestedAt = time.Time{}
 	}
 	switch action {
 	case "cancel":

@@ -25,7 +25,10 @@ import (
 	"newspaperbot/internal/post"
 )
 
-type Config struct{ URL, CacheDir, Token string }
+type Config struct {
+	URL, CacheDir, Token string
+	DownloadMedia        func(context.Context, string) ([]byte, error)
+}
 
 type Repository struct {
 	config    Config

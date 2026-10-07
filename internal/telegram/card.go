@@ -18,6 +18,7 @@ import (
 
 const example = "My title\n\nA short summary.\n\n## First section\nWrite the Markdown body here."
 const choicesPerPage = 8
+const markdownRenderFailure = "Telegram could not render this Markdown. Your source is saved; /download gets the complete file."
 
 func clip(text string, limit int) string {
 	runes := []rune(text)
@@ -77,7 +78,27 @@ func previewMarkdown(d post.Draft) string {
 		}
 		identity = fmt.Sprintf("**%s** · `#%d` · %s · %s", label, d.Number, articleAge(d), d.PublishedAt.Format("2006-01-02"))
 	}
-	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n%s\n\n**Category:** %s\n\n**Tags:** %s", identity, escapeRichText(d.CategoryLabel()), escapeRichText(tags)) + messageIssuesMarkdown(d.MessageIssues) + statusMarkdown(d.Notice)
+	return d.RichMarkdown() + fmt.Sprintf("\n\n---\n\n%s\n\n**Category:** %s\n\n**Tags:** %s", identity, escapeRichText(d.CategoryLabel()), escapeRichText(tags)) + messageIssuesMarkdown(d.MediaIssues()) + statusMarkdown(draftStatus(d))
+}
+
+func draftStatus(d post.Draft) string {
+	status := d.Notice
+	for _, issue := range d.MediaIssues() {
+		if strings.HasPrefix(status, strings.SplitN(issue.Reason, " · ", 2)[0]) {
+			status = ""
+			break
+		}
+	}
+	if !d.PublishRequestedAt.IsZero() {
+		status = "Waiting for album · publication pending"
+	}
+	if len(d.LateMedia) != 0 {
+		if status != "" {
+			status += " · "
+		}
+		status += fmt.Sprintf("%d late album items pending edit", len(d.LateMedia))
+	}
+	return status
 }
 
 func statusMarkdown(status string) string {
@@ -117,7 +138,7 @@ func overview(d post.Draft) string {
 		tags = "no tags"
 	}
 	text := fmt.Sprintf("<b>%s</b>\n%s\n\n<blockquote>%s</blockquote>",
-		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(d.Content, 650)))
+		html.EscapeString(clip(d.Title, 200)), html.EscapeString(clip(d.Summary, 400)), html.EscapeString(clip(post.RewriteImages(d.Content, func(string, string) string { return "[Photo]" }), 650)))
 	if d.Slot > 0 {
 		text += fmt.Sprintf("\n\n<code>#%d</code> <i>· %s · %s</i>", d.Slot, html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 	} else {
@@ -130,6 +151,7 @@ func overview(d post.Draft) string {
 }
 
 func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
+	d.Notice = draftStatus(d)
 	if d.Number != 0 && d.Revision == nil {
 		d.Categories, d.AvailableTags = []string{d.Category}, d.Tags
 	}
@@ -209,12 +231,19 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 			markup = keyboard(d, "Back", "back", "Discard changes", "cancel")
 		}
 		text += "\n<i>Reply to this card to target this post.</i>"
+		if count := len(d.ImageFiles()); count != 0 {
+			label := "images"
+			if count == 1 {
+				label = "image"
+			}
+			text += fmt.Sprintf("\n<b>Media</b> · %d %s", count, label)
+		}
 	case d.View == "options":
 		text += "\n\n<b>Options</b>"
 		markup = keyboard(d, "Category", "categories-0", "Tags", "tags-0")
 		addRow(markup, d, "Replace post", "replace", "Download", "download")
 		if len(d.Sources) > 0 && !d.Sources[len(d.Sources)-1].Full {
-			addRow(markup, d, "Remove last text addition", "undo")
+			addRow(markup, d, "Remove last addition", "undo")
 		}
 		addRow(markup, d, "Back", "back", "Cancel draft", "cancel")
 		if d.Revision != nil {
@@ -287,7 +316,7 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 	if d.Notice != "" && !(d.Revision != nil && d.Locked()) {
 		text += "\n\n<b>Status</b> · " + html.EscapeString(clip(d.Notice, 350))
 	}
-	text += messageIssuesHTML(d.MessageIssues)
+	text += messageIssuesHTML(d.MediaIssues())
 	sourceButtons(d, markup)
 	return text, markup
 }
@@ -364,11 +393,19 @@ func (a *App) render(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 	var rich *models.InputRichMessage
 	live := d.Number != 0 && d.Revision == nil && d.Exported && (d.ChannelID == 0 || d.Delivery == "sent")
 	if d.View == "preview" && d.Invalid == "" && !tooLong && (!d.Locked() || live) {
-		rich = &models.InputRichMessage{Markdown: previewMarkdown(*d)}
+		preview := *d
+		if preview.Notice == markdownRenderFailure {
+			preview.Notice = ""
+		}
+		rich = a.richMessage(preview, true)
 	}
 	err := a.writeCard(ctx, b, d, text, markup, rich)
+	if rich != nil && (err == nil || unchangedMessage(err)) && d.Notice == markdownRenderFailure {
+		d.Notice = ""
+		return a.Store.SaveCard(ctx, d)
+	}
 	if rich != nil && errors.Is(err, bot.ErrorBadRequest) {
-		d.Notice = "Telegram could not render this Markdown. Your source is saved; /download gets the complete file."
+		d.Notice = markdownRenderFailure
 		if saveErr := a.Store.Save(ctx, d); saveErr != nil {
 			return saveErr
 		}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot"
@@ -32,6 +33,12 @@ func (a *App) saveChanges(ctx context.Context, b *bot.Bot, d *post.Draft) error 
 	}
 	if err := d.ValidatePortfolio(); err != nil {
 		return a.notice(ctx, b, d, err.Error())
+	}
+	if d.GitOperation == "" && time.Since(d.AlbumUpdatedAt) < 750*time.Millisecond {
+		if d.PublishRequestedAt.IsZero() {
+			d.PublishRequestedAt = time.Now().UTC()
+		}
+		return a.notice(ctx, b, d, "Saving after album arrives…")
 	}
 	if d.GitOperation == "" {
 		data, err := d.Markdown()
@@ -73,7 +80,7 @@ func (a *App) finishRevision(ctx context.Context, b *bot.Bot, d *post.Draft) err
 			} else {
 				document := d.DocumentMode || utf8.RuneCountInString(d.RichMarkdown()) > 32768
 				if !document {
-					_, err = a.writePreview(ctx, b, d.ChannelID, id, "", nil, &models.InputRichMessage{Markdown: d.RichMarkdown()}, false)
+					_, err = a.writePreview(ctx, b, d.ChannelID, id, "", nil, a.richMessage(*d, false), false)
 					document = errors.Is(err, bot.ErrorBadRequest) && !missingCard(err) && !unchangedMessage(err)
 				}
 				if document {

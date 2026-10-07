@@ -51,6 +51,11 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 		if err := d.ValidatePortfolio(); err != nil {
 			return d, err
 		}
+		for i := range d.Sources {
+			if m := d.Sources[i].Media; m != nil {
+				m.Error = ""
+			}
+		}
 		var random [16]byte
 		if _, err := rand.Read(random[:]); err != nil {
 			return d, err
@@ -58,12 +63,16 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 		d.GitOperation = hex.EncodeToString(random[:])
 		d.Slot = 0
 		if d.Revision == nil {
-			d.PublishedAt = time.Now().UTC()
+			d.PublishedAt = d.PublishRequestedAt
+			if d.PublishedAt.IsZero() {
+				d.PublishedAt = time.Now().UTC()
+			}
 			d.Portfolio, d.ChannelID = true, channel
 			if channel != 0 {
 				d.Delivery = "pending"
 			}
 		}
+		d.PublishRequestedAt = time.Time{}
 		job := Publication{Operation: d.GitOperation, Draft: d, State: "queued"}
 		data, err := json.Marshal(job)
 		if err != nil {
@@ -84,6 +93,62 @@ func (s *Store) Queue(ctx context.Context, id, channel int64) (post.Draft, error
 		return d, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET slot=NULL,data=? WHERE id=?", string(data), id); err != nil {
+		return d, err
+	}
+	return d, tx.Commit()
+}
+
+// A failed image download before any commit leaves an editable post. Once a
+// commit exists, normal publication recovery owns the operation instead.
+func (s *Store) ReleasePublication(ctx context.Context, job *Publication, fileID, reason string) (post.Draft, error) {
+	if job.CommitSHA != "" || job.State == "pushed" || job.State == "done" {
+		return post.Draft{}, ErrPublicationLocked
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return post.Draft{}, err
+	}
+	defer tx.Rollback()
+	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE id=?", job.Draft.ID))
+	if err != nil {
+		return d, err
+	}
+	if d.GitOperation != job.Operation {
+		return d, ErrPublicationLocked
+	}
+	d.GitOperation, d.GitState, d.Notice = "", "", reason
+	d.PublishRequestedAt = time.Time{}
+	for i := range d.Sources {
+		if m := d.Sources[i].Media; m != nil && m.FileID == fileID {
+			m.Error = reason
+			d.Notice = ""
+		}
+	}
+	late := d.LateMedia
+	d.LateMedia = nil
+	for _, source := range late {
+		if err := d.Append(source); err != nil {
+			return d, err
+		}
+		d.LastMessageID = max(d.LastMessageID, source.MessageID)
+	}
+	var slot any
+	if d.Number == 0 {
+		d.Slot, err = availableSlot(tx)
+		if err != nil {
+			return d, err
+		}
+		slot = d.Slot
+		d.PublishedAt = time.Time{}
+	}
+	data, err := json.Marshal(d)
+	if err != nil {
+		return d, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET slot=?,data=? WHERE id=?", slot, string(data), d.ID); err != nil {
+		return d, err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM publications WHERE operation=?", job.Operation); err != nil {
 		return d, err
 	}
 	return d, tx.Commit()

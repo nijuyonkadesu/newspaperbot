@@ -44,7 +44,7 @@ func (a *App) writeMessage(ctx context.Context, b *bot.Bot, chatID int64, id int
 func (a *App) writePreview(ctx context.Context, b *bot.Bot, chatID int64, id int, text string, markup *models.InlineKeyboardMarkup, rich *models.InputRichMessage, footer bool) (*models.Message, error) {
 	target := previewTarget{chatID, id}
 	a.cancelPreview(target)
-	if rich == nil || a.Previews == nil || rich.Markdown == "" || len(rich.Media) != 0 {
+	if rich == nil || a.Previews == nil || rich.Markdown == "" {
 		return a.writeMessage(ctx, b, chatID, id, text, markup, rich)
 	}
 	message, err := a.writeMessage(ctx, b, chatID, id, text, markup, rich)
@@ -73,9 +73,9 @@ func (a *App) writeLinkCard(ctx context.Context, b *bot.Bot, target previewTarge
 				continue
 			}
 			if withImage {
-				content.Media = []models.InputRichMessageMedia{{ID: "newspaperbot_preview", Media: &models.InputMediaPhoto{
+				content.Media = append(append([]models.InputRichMessageMedia(nil), rich.Media...), models.InputRichMessageMedia{ID: "newspaperbot_preview", Media: &models.InputMediaPhoto{
 					Media: "attach://newspaperbot-preview." + card.ImageFormat, MediaAttachment: bytes.NewReader(card.Image),
-				}}}
+				}})
 			}
 			message, err := a.writeMessage(ctx, b, target.chat, target.id, "", markup, &content)
 			if err == nil || unchangedMessage(err) {

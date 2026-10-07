@@ -22,7 +22,7 @@ func (a *App) RegisterMenu(ctx context.Context, b *bot.Bot) error {
 			{Command: "save", Description: "Save article edits"},
 			{Command: "publish", Description: "Publish draft"},
 			{Command: "replace", Description: "Replace entire post"},
-			{Command: "undo", Description: "Remove last appended text; keeps the chat message"},
+			{Command: "undo", Description: "Remove last addition; keeps the chat message"},
 			{Command: "remove", Description: "Remove addition: reply or message ID"},
 			{Command: "download", Description: "Download Markdown; optional article number"},
 			{Command: "cancel", Description: "Delete draft / discard article edits"},

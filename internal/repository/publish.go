@@ -83,7 +83,11 @@ func (r *Repository) Publish(ctx context.Context, job *store.Publication, checkp
 		if err != nil {
 			return err
 		}
-		if err := r.stage(ctx, job.Filename, paths); err != nil {
+		var assets []string
+		for name := range job.Draft.ImageFiles() {
+			assets = append(assets, post.ImageAssetDir+name)
+		}
+		if err := r.stage(ctx, job.Filename, paths, assets...); err != nil {
 			return err
 		}
 		diff, err := r.git(ctx, "diff", "--cached", "--name-only")
@@ -126,6 +130,10 @@ func validNotePath(name string) bool {
 }
 
 func (r *Repository) prepare(ctx context.Context, job *store.Publication, checkpoint func() error) error {
+	assets, err := r.prepareImages(ctx, job.Draft)
+	if err != nil {
+		return err
+	}
 	if job.Draft.Revision != nil {
 		job.Number, job.Filename, job.Slug, job.CommitSHA = job.Draft.Number, job.Draft.Filename, job.Draft.Slug, ""
 	} else if err := r.assignNote(job); err != nil {
@@ -158,7 +166,7 @@ func (r *Repository) prepare(ctx context.Context, job *store.Publication, checkp
 	if err != nil {
 		return err
 	}
-	if err := r.stage(ctx, job.Filename, paths); err != nil {
+	if err := r.stage(ctx, job.Filename, paths, assets...); err != nil {
 		return err
 	}
 	verb := "Publish"
@@ -239,8 +247,9 @@ func (r *Repository) taxonomyPaths() ([]string, error) {
 	return paths, nil
 }
 
-func (r *Repository) stage(ctx context.Context, note string, taxonomy []string) error {
+func (r *Repository) stage(ctx context.Context, note string, taxonomy []string, assets ...string) error {
 	allowed := append([]string{note}, taxonomy...)
+	allowed = append(allowed, assets...)
 	changed, err := r.git(ctx, "diff", "HEAD", "--name-only")
 	if err != nil {
 		return err

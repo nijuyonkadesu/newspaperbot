@@ -162,6 +162,17 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	reject := func(code int, description string) {
 		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error_code": code, "description": description})
 	}
+	// Telegram's InputRichMessageMedia IDs are 1-64 ASCII characters. Enforce
+	// the API contract independently of the production ID-generation code.
+	for _, raw := range call.RichMedia {
+		var ref struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &ref); err != nil || len(ref.ID) == 0 || len(ref.ID) > 64 || strings.Trim(ref.ID, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != "" {
+			reject(400, "invalid rich message media identifier")
+			return
+		}
+	}
 	if code := f.failures[call.Method]; code != 0 && call.ChatID < 0 {
 		reject(code, "test failure")
 		return

@@ -33,11 +33,13 @@ func (s *Store) StartRevision(ctx context.Context, article post.Article) (post.D
 		live := article.Draft
 		live.ID, live.CardID, live.Preview = d.ID, d.CardID, d.Preview
 		live.SourceReplyID, live.SourceReplyToID = d.SourceReplyID, d.SourceReplyToID
+		live.Images, live.LateMedia = d.Images, d.LateMedia
 		live.ChannelID, live.Delivery, live.DocumentMode = d.ChannelID, d.Delivery, d.DocumentMode
 		live.SummaryMessageID, live.ContentMessageID = d.SummaryMessageID, d.ContentMessageID
 		live.Categories, live.AvailableTags, live.TagGroups = d.Categories, d.AvailableTags, d.TagGroups
 		if post.SameArticle(d, live) {
 			live.Sources, live.BaseContent, live.LastMessageID = d.Sources, d.BaseContent, d.LastMessageID
+			live.MessageIssues = d.MessageIssues
 		}
 		live.Revision = &post.Revision{Original: article.Original}
 		live.UpdatedAt = time.Now().UTC()
@@ -86,6 +88,7 @@ func (s *Store) DiscardRevision(ctx context.Context, id int64) (post.Draft, erro
 	d.Title, d.Summary, d.Content = original.Title, original.Summary, original.Content
 	d.Category, d.Tags, d.Frontmatter = original.Category, original.Tags, original.Frontmatter
 	d.Revision, d.Sources, d.MessageIssues, d.ReplacementSource = nil, nil, nil, nil
+	d.PublishRequestedAt, d.AlbumUpdatedAt, d.LateMedia = time.Time{}, time.Time{}, nil
 	d.GitOperation, d.GitState, d.View, d.Notice, d.Invalid, d.BaseContent = "", "done", "", "", "", ""
 	d.UpdatedAt = time.Now().UTC()
 	data, err := json.Marshal(d)

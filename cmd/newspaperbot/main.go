@@ -62,11 +62,19 @@ func run() error {
 	defer stop()
 	app.PreviewContext = ctx
 	defer app.ClosePreviews()
+	b, err := bot.New(token, bot.WithServerURL(strings.TrimRight(env("BOT_API_URL", "https://api.telegram.org"), "/")),
+		bot.WithDefaultHandler(app.Handle), bot.WithNotAsyncHandlers(), bot.WithWorkers(1),
+		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateEditedMessage, models.AllowedUpdateCallbackQuery}),
+		bot.WithErrorsHandler(func(err error) { log.Print(strings.ReplaceAll(err.Error(), token, "[redacted]")) }))
+	if err != nil {
+		return err
+	}
 	if os.Getenv("PORTFOLIO_GIT_TOKEN") != "" || os.Getenv("PORTFOLIO_REPO_URL") != "" {
 		setupCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		repo, err := repository.Open(setupCtx, repository.Config{
 			URL:      env("PORTFOLIO_REPO_URL", "https://github.com/nijuyonkadesu/portfolio.git"),
 			CacheDir: env("PORTFOLIO_CACHE_DIR", ".run/portfolio"), Token: os.Getenv("PORTFOLIO_GIT_TOKEN"),
+			DownloadMedia: func(ctx context.Context, id string) ([]byte, error) { return telegram.DownloadMedia(ctx, b, id) },
 		})
 		cancel()
 		if err != nil {
@@ -79,13 +87,6 @@ func run() error {
 			return err
 		}
 		log.Printf("portfolio connected: %d categories, %d tags, next note %d", len(catalog.Categories), len(catalog.Tags), catalog.LastNumber+1)
-	}
-	b, err := bot.New(token, bot.WithServerURL(strings.TrimRight(env("BOT_API_URL", "https://api.telegram.org"), "/")),
-		bot.WithDefaultHandler(app.Handle), bot.WithNotAsyncHandlers(), bot.WithWorkers(1),
-		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateEditedMessage, models.AllowedUpdateCallbackQuery}),
-		bot.WithErrorsHandler(func(err error) { log.Print(strings.ReplaceAll(err.Error(), token, "[redacted]")) }))
-	if err != nil {
-		return err
 	}
 	menuCtx, cancelMenu := context.WithTimeout(ctx, 15*time.Second)
 	if err := app.RegisterMenu(menuCtx, b); err != nil {

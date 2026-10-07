@@ -82,7 +82,7 @@ func TestForwardedEntitiesUpdateTheSamePreviewCard(t *testing.T) {
 	}
 }
 
-func TestRichMessagesAreReferencedAndCaptionsAreIgnored(t *testing.T) {
+func TestRichMessagesAreReferencedAndMediaCaptionsAreRetained(t *testing.T) {
 	h := newHarness(t)
 	h.ready("Body")
 	h.click("preview")
@@ -107,12 +107,13 @@ func TestRichMessagesAreReferencedAndCaptionsAreIgnored(t *testing.T) {
 	h.messageID++
 	h.app.Handle(context.Background(), h.bot, &models.Update{ID: int64(h.messageID), Message: &models.Message{
 		ID: h.messageID, From: &models.User{ID: 42}, Chat: models.Chat{ID: 42, Type: models.ChatTypePrivate},
-		Caption: "Ignored caption", CaptionEntities: []models.MessageEntity{{Type: models.MessageEntityTypeBold, Offset: 0, Length: 7}},
-		Photo: []models.PhotoSize{{FileID: "photo"}}, MediaGroupID: "album",
+		Caption: "Picture caption", CaptionEntities: []models.MessageEntity{{Type: models.MessageEntityTypeBold, Offset: 0, Length: 7}},
+		Photo: []models.PhotoSize{{FileID: "photo", FileUniqueID: "unique-photo"}}, MediaGroupID: "album",
 	}})
 	d = h.active()
-	if d.Content != "Body" || len(d.MessageIssues) != 1 || len(h.api.snapshot()) != calls {
-		t.Fatal("caption or media entered the composer")
+	imageBody := "Body\n\n![](" + post.ImageURLDir + post.ImageAsset("unique-photo", "jpg") + ")\n\n**Picture** caption"
+	if d.Content != imageBody || len(d.MessageIssues) != 1 || len(h.api.snapshot()) != calls+1 || d.CardID != cardID || !d.Preview {
+		t.Fatal("media caption was lost or rich-source review/card state changed")
 	}
 
 	h.messageID++
@@ -120,7 +121,7 @@ func TestRichMessagesAreReferencedAndCaptionsAreIgnored(t *testing.T) {
 		ID: richID, EditDate: 1, From: &models.User{ID: 42}, Chat: models.Chat{ID: 42, Type: models.ChatTypePrivate}, Text: "Recovered text",
 	}})
 	d = h.active()
-	if d.Content != "Body\n\nRecovered text" || len(d.MessageIssues) != 0 || d.CardID != cardID || !d.Preview {
+	if d.Content != imageBody+"\n\nRecovered text" || len(d.MessageIssues) != 0 || d.CardID != cardID || !d.Preview {
 		t.Fatal("a rich source edited into text was not recovered in place")
 	}
 }

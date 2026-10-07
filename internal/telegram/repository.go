@@ -2,10 +2,12 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
 	"github.com/go-telegram/bot"
+	"newspaperbot/internal/media"
 	"newspaperbot/internal/post"
 	"newspaperbot/internal/store"
 )
@@ -13,6 +15,12 @@ import (
 func (a *App) queuePublication(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 	if err := d.ValidatePortfolio(); err != nil {
 		return a.notice(ctx, b, d, err.Error())
+	}
+	if d.GitOperation == "" && time.Since(d.AlbumUpdatedAt) < 750*time.Millisecond {
+		if d.PublishRequestedAt.IsZero() {
+			d.PublishRequestedAt = time.Now().UTC()
+		}
+		return a.notice(ctx, b, d, "Publishing after album arrives…")
 	}
 	channel, err := a.Store.Setting(ctx, "channel")
 	if err != nil {
@@ -42,6 +50,7 @@ func (a *App) RunPublisher(ctx context.Context, b *bot.Bot) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
+		a.flushMediaRequests(ctx, b)
 		jobs, err := a.Store.PendingPublications(ctx)
 		if err != nil && ctx.Err() == nil {
 			a.logError(b, "publication queue", err)
@@ -75,7 +84,14 @@ func (a *App) runPublication(ctx context.Context, b *bot.Bot, job *store.Publica
 		a.logError(b, "repository publication", err)
 		job.Error = err.Error()
 		job.Conflict = errors.Is(err, post.ErrArticleChanged)
-		d, saveErr := a.Store.FailPublication(uiCtx, job)
+		var imageErr *media.ImageError
+		var d post.Draft
+		var saveErr error
+		if errors.As(err, &imageErr) && job.CommitSHA == "" {
+			d, saveErr = a.Store.ReleasePublication(uiCtx, job, imageErr.FileID, imageErr.Reason)
+		} else {
+			d, saveErr = a.Store.FailPublication(uiCtx, job)
+		}
 		if saveErr != nil {
 			a.logError(b, "publication checkpoint", saveErr)
 			return
@@ -97,5 +113,40 @@ func (a *App) runPublication(ctx context.Context, b *bot.Bot, job *store.Publica
 			status = "Repository updated · channel update pending"
 		}
 		_ = a.notice(uiCtx, b, &d, status)
+	} else if err := a.applyLateMedia(uiCtx, b, &d); err != nil {
+		a.logError(b, "late album", err)
+	}
+}
+
+func (a *App) flushMediaRequests(ctx context.Context, b *bot.Bot) {
+	drafts, err := a.Store.MediaPending(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			a.logError(b, "media pending", err)
+		}
+		return
+	}
+	for _, saved := range drafts {
+		a.mu.Lock()
+		d, err := a.Store.Get(ctx, saved.ID)
+		if err == nil {
+			if len(d.LateMedia) != 0 && d.Exported && d.Revision == nil && (d.ChannelID == 0 || d.Delivery == "sent") {
+				err = a.applyLateMedia(ctx, b, &d)
+			}
+			if err == nil && !d.PublishRequestedAt.IsZero() && time.Since(d.AlbumUpdatedAt) >= 750*time.Millisecond {
+				if validation := d.ValidatePortfolio(); validation != nil {
+					d.PublishRequestedAt = time.Time{}
+					err = a.notice(ctx, b, &d, validation.Error())
+				} else if d.Revision != nil {
+					err = a.saveChanges(ctx, b, &d)
+				} else {
+					err = a.queuePublication(ctx, b, &d)
+				}
+			}
+		}
+		a.mu.Unlock()
+		if err != nil && !errors.Is(err, sql.ErrNoRows) && ctx.Err() == nil {
+			a.logError(b, "media pending", err)
+		}
 	}
 }

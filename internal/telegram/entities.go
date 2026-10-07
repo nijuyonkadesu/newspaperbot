@@ -20,7 +20,7 @@ func importText(m *models.Message) (text, issue string) {
 	if m.RichMessage != nil {
 		return "", "rich content skipped"
 	}
-	if m.Text == "" { // Captions and media are deliberately outside the composer for now.
+	if m.Text == "" { // Captions are handled by the media importer.
 		return "", ""
 	}
 	text, incomplete := entityMarkdown(m.Text, m.Entities)

@@ -218,5 +218,23 @@ Pin `/taxonomy`; the bot updates that message as names change. Tag groups are
 hints, not restrictions. Setting a destination requires bot admin access and
 your membership; it applies to future publications.
 
-> **Warning:** Media attachments and their captions are currently ignored.
-> They aren't included in previews, Markdown files, or published posts.
+**Photos, albums, and captions**
+
+| Your message to bot / interaction | Bot's reply to you (auto updates the same msg) |
+| --- | --- |
+| Reply to a draft/edit card with your photo | Photo joins that post. Caption appears beneath it; editing the caption updates the card. |
+| Forward a photo album | Photos stay together, in message order. Public source gets a link; captions stay with their media. |
+| <kbd>Preview</kbd> | Photos appear using Telegram's existing files. No image download yet. |
+| <kbd>Publish</kbd> / <kbd>Save changes</kbd> | Retrieves new images from Bot API; commits them with Markdown and taxonomy. The site shows them under `/assets/images/posts/`. |
+| Send/forward a video | Uses its public source link. Without one: **Review** · Video needs a public URL. |
+| Reply to that video with `https://…` | Sets its link. Edit your reply to change it. Other attachments use the same link flow. |
+| Reply to a media message with `/remove` | Removes that item and caption; clears source and command where allowed. |
+| Image retrieval fails | Error stays on the card; the post remains editable. Retry <kbd>Publish</kbd>/<kbd>Save changes</kbd>, resend, or `/remove`. |
+
+Captions never set title, summary, category, or tags. Photos and JPEG/PNG/WebP
+image files are supported: up to 20 images, 5 MiB and 16 megapixels each.
+Videos and other attachments publish as links. Late album items become pending
+article edits; use **Save changes** to include them.
+
+> **Note:** Rich-message forwards still require review. Deleting a source in
+> Telegram doesn't update the post; use `/remove`.

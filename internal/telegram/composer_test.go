@@ -620,7 +620,7 @@ func TestCommandMenuOmitsRedundantActionsAndStartStillWorks(t *testing.T) {
 			}
 			if command.Command == "undo" {
 				foundUndo = true
-				if !strings.Contains(command.Description, "appended text") || !strings.Contains(command.Description, "keeps the chat message") {
+				if !strings.Contains(command.Description, "last addition") || !strings.Contains(command.Description, "keeps the chat message") {
 					t.Fatal("Undo is described as a general rollback")
 				}
 			}

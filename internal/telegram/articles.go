@@ -175,6 +175,9 @@ func (a *App) previewArticle(ctx context.Context, b *bot.Bot, number int64) erro
 		return a.articles(ctx, b, number, "", false)
 	}
 	d := articles[i].Draft
+	if saved, err := a.Store.GetArticle(ctx, number); err == nil {
+		d.Images = saved.Images
+	}
 	d.Categories, d.AvailableTags = []string{d.Category}, d.Tags
 	id, err := a.Store.Setting(ctx, "posts_message")
 	if err != nil {
@@ -191,7 +194,7 @@ func (a *App) previewArticle(ctx context.Context, b *bot.Bot, number int64) erro
 	markdown := previewMarkdown(d)
 	text := "<b>Live</b> · " + articleIdentity(d) + "\n\n" + overview(d)
 	if utf8.RuneCountInString(markdown) <= 32768 {
-		_, err = a.writeText(ctx, b, int(id), "", markup, &models.InputRichMessage{Markdown: markdown})
+		_, err = a.writeText(ctx, b, int(id), "", markup, a.richMessage(d, true))
 		if err == nil || unchangedMessage(err) {
 			return nil
 		}

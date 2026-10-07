@@ -31,7 +31,7 @@ func sourceButtons(d post.Draft, markup *models.InlineKeyboardMarkup) {
 		}
 		break
 	}
-	for i, issue := range d.MessageIssues {
+	for i, issue := range d.MediaIssues() {
 		if i%2 == 0 {
 			markup.InlineKeyboard = append(markup.InlineKeyboard, nil)
 		}
@@ -43,7 +43,7 @@ func sourceButtons(d post.Draft, markup *models.InlineKeyboardMarkup) {
 
 func (a *App) showSource(ctx context.Context, b *bot.Bot, d *post.Draft, id int) error {
 	linked := slices.ContainsFunc(d.Sources, func(s post.Source) bool { return s.MessageID == id }) ||
-		slices.ContainsFunc(d.MessageIssues, func(s post.MessageIssue) bool { return s.MessageID == id }) ||
+		slices.ContainsFunc(d.MediaIssues(), func(s post.MessageIssue) bool { return s.MessageID == id }) ||
 		d.ReplacementSource != nil && d.ReplacementSource.MessageID == id
 	if id <= 0 || !linked {
 		return a.notice(ctx, b, d, "Source no longer linked · use the current controls")

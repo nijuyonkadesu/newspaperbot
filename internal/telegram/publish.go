@@ -40,6 +40,9 @@ func (a *App) publish(ctx context.Context, b *bot.Bot, d *post.Draft, retry bool
 	if d.Revision != nil {
 		return a.saveChanges(ctx, b, d)
 	}
+	if a.Repository == nil && len(d.ImageFiles()) != 0 {
+		return a.notice(ctx, b, d, "Images require repository publishing")
+	}
 	if a.Repository == nil && d.GitOperation != "" && d.Number == 0 {
 		return a.notice(ctx, b, d, "Repository publishing is not configured. Restore its configuration to continue this publication.")
 	}
@@ -131,7 +134,7 @@ func (a *App) deliver(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 		if err := a.beforeSend(ctx, d); err != nil {
 			return err
 		}
-		message, err := a.writePreview(ctx, b, d.ChannelID, 0, "", nil, &models.InputRichMessage{Markdown: d.RichMarkdown()}, false)
+		message, err := a.writePreview(ctx, b, d.ChannelID, 0, "", nil, a.richMessage(*d, false), false)
 		if errors.Is(err, bot.ErrorBadRequest) {
 			d.DocumentMode = true
 			d.Delivery = "pending"
