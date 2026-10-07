@@ -477,7 +477,8 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 				d.ReplacementSource = &source
 			} else {
 				source.Full = true
-				d.Sources = []post.Source{source}
+				// Supersede only the unfinished text; keep media already attached.
+				d.Sources = append([]post.Source{source}, slices.DeleteFunc(d.Sources, func(old post.Source) bool { return old.Full })...)
 			}
 			setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
 			d.LastMessageID = m.ID
@@ -574,7 +575,7 @@ func (a *App) edited(ctx context.Context, b *bot.Bot, m *models.Message, updateI
 					d.ReplacementSource = &source
 				} else {
 					source.Full = true
-					d.Sources = []post.Source{source}
+					d.Sources = append([]post.Source{source}, slices.DeleteFunc(d.Sources, func(old post.Source) bool { return old.Full })...)
 				}
 			}
 		} else {

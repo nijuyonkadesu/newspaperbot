@@ -29,6 +29,66 @@ func photoMessage(unique, caption string, reply int) models.Message {
 	return m
 }
 
+func TestIncompleteInitialPostKeepsPhotosThroughCorrectionAndRestart(t *testing.T) {
+	for _, scenario := range []struct {
+		name        string
+		photoFirst  bool
+		correctEdit bool
+	}{
+		{"photo first, edit text", true, true},
+		{"photo first, new text", true, false},
+		{"text first, edit text", false, true},
+		{"text first, new text", false, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.send("/newpost")
+			cardID := h.active().CardID
+			firstPhotoID := 0
+			if scenario.photoFirst {
+				firstPhotoID = h.sendMedia(photoMessage("first-pending", "First caption", cardID))
+			}
+			h.send("Incomplete title")
+			textID := h.messageID
+			if !scenario.photoFirst {
+				firstPhotoID = h.sendMedia(photoMessage("first-pending", "First caption", cardID))
+			}
+			h.edit(textID, "Still incomplete title")
+			secondPhotoID := h.sendMedia(photoMessage("second-pending", "Second caption", cardID))
+			h.restart()
+			if scenario.correctEdit {
+				h.edit(textID, "Title\n\nSummary\n\nCorrected body")
+			} else {
+				h.send("Title\n\nSummary\n\nCorrected body")
+			}
+			d := h.active()
+			if err := d.Validate(); err != nil {
+				t.Fatal("corrected post is not publishable", err)
+			}
+			first := post.ImageURLDir + post.ImageAsset("first-pending", "jpg")
+			second := post.ImageURLDir + post.ImageAsset("second-pending", "jpg")
+			if len(d.ImageFiles()) != 2 || strings.Count(d.Content, "First caption") != 1 || strings.Count(d.Content, "Second caption") != 1 || strings.Index(d.Content, first) >= strings.Index(d.Content, second) {
+				t.Fatal("correction lost, duplicated, or reordered photos/captions", d.Content)
+			}
+			for _, id := range []int{firstPhotoID, secondPhotoID} {
+				linked, err := h.app.Store.FromMessage(context.Background(), id)
+				if err != nil || linked.ID != d.ID {
+					t.Fatal("photo lost its draft association", id, err)
+				}
+			}
+			data, err := d.Markdown()
+			if err != nil || !strings.Contains(string(data), first) || !strings.Contains(string(data), second) || !strings.Contains(string(data), ":::caption\nFirst caption\n:::") || !strings.Contains(string(data), ":::caption\nSecond caption\n:::") {
+				t.Fatal("download/export lost photos or captions", string(data), err)
+			}
+			h.click("preview")
+			live := h.api.live()
+			if h.active().CardID != cardID || h.api.count("sendMessage", false) != 1 || len(live) != 1 || len(live[0].RichMedia) != 2 {
+				t.Fatal("correction replaced the card or rich preview lost photos")
+			}
+		})
+	}
+}
+
 func TestOwnPhotosReplyToTheirDraftWithoutDownloadingAndSurviveRestart(t *testing.T) {
 	h := newHarness(t)
 	first := h.ready("First body")

@@ -156,7 +156,8 @@ func (a *App) mediaMessage(ctx context.Context, b *bot.Bot, m *models.Message, u
 	if d.View == "replace" {
 		return true, a.notice(ctx, b, &d, "Send replacement text first · then add media")
 	}
-	if err := a.appendMedia(&d, source); err != nil {
+	// A text parse error keeps the last valid body; the new media still needs saving.
+	if err := a.appendMedia(&d, source); err != nil && d.Invalid == "" {
 		return true, err
 	}
 	setMessageIssue(&d, m.ID, updateID, m.EditDate, issue)
