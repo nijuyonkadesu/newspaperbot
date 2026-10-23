@@ -26,6 +26,12 @@ supported for compatibility with the previous generator revision.
 The bot follows the repository's generator when choosing which files to commit;
 it does not rename references or modify that generator.
 
+`origin/main` is the source of truth for published numbers and article content.
+If you remove the highest article and push, the next publication can reuse its
+number. SQLite history does not reserve it. `/posts` and live previews read the
+fetched repository; removed or replaced articles lose their old local/channel
+associations. Drafts and pending edits to unchanged articles remain separate.
+
 Each catalog snapshot comes from one fetched `origin/main` revision. Fetching
 runs every 30 seconds and before publishing. Owner actions use an in-memory
 snapshot, so a network failure retains the last valid catalog and does not block

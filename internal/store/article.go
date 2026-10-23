@@ -14,6 +14,70 @@ func (s *Store) GetArticle(ctx context.Context, number int64) (post.Draft, error
 	return decode(s.db.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE number=?", number))
 }
 
+// SyncArticles retires stale local associations; article content and numbering
+// come from the fetched Git snapshot. History remains stored but is not editable.
+func (s *Store) SyncArticles(ctx context.Context, articles []post.Article) error {
+	live := make(map[int64]post.Draft, len(articles))
+	for _, article := range articles {
+		live[article.Number] = article.Draft
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, "SELECT data FROM drafts WHERE number IS NOT NULL")
+	if err != nil {
+		return err
+	}
+	var retired []int64
+	for rows.Next() {
+		var data []byte
+		var d post.Draft
+		if err := rows.Scan(&data); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := json.Unmarshal(data, &d); err != nil {
+			rows.Close()
+			return err
+		}
+		if !post.SameArticleIdentity(d, live[d.Number]) {
+			retired = append(retired, d.Number)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, number := range retired {
+		if err := retireArticle(ctx, tx, number, 0); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// The SQL number is the current lookup binding, not a reservation against Git.
+// Retain historical data and receipts while preventing stale jobs/cards from
+// acting on a replacement article that has the same number.
+func retireArticle(ctx context.Context, tx *sql.Tx, number, exceptID int64) error {
+	const previous = "SELECT id FROM drafts WHERE number=? AND id<>?"
+	for _, query := range []string{
+		"UPDATE publications SET state='retired' WHERE draft_id IN (" + previous + ")",
+		"UPDATE settings SET value=0 WHERE key='active' AND value IN (" + previous + ")",
+		"UPDATE drafts SET number=NULL,data=json_set(data,'$.Archived',json('true')) WHERE number=? AND id<>?",
+	} {
+		if _, err := tx.ExecContext(ctx, query, number, exceptID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // StartRevision resumes existing work, or refreshes a live article from Git.
 // Destination IDs belong to the original publication, not the current setting.
 func (s *Store) StartRevision(ctx context.Context, article post.Article) (post.Draft, error) {
@@ -25,6 +89,12 @@ func (s *Store) StartRevision(ctx context.Context, article post.Article) (post.D
 	d, err := decode(tx.QueryRowContext(ctx, "SELECT id,slot,data FROM drafts WHERE number=?", article.Number))
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return d, err
+	}
+	if err == nil && !post.SameArticleIdentity(d, article.Draft) {
+		if err := retireArticle(ctx, tx, article.Number, 0); err != nil {
+			return post.Draft{}, err
+		}
+		d = post.Draft{}
 	}
 	if d.Revision == nil {
 		if d.ID != 0 && (!d.Exported || d.ChannelID != 0 && d.Delivery != "sent") {

@@ -2,7 +2,6 @@ package telegram
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"html"
@@ -35,7 +34,14 @@ func (a *App) liveArticles(ctx context.Context) ([]post.Article, error) {
 	if err := a.Repository.Refresh(ctx); err != nil {
 		return nil, err
 	}
-	return a.Repository.Articles(ctx)
+	articles, err := a.Repository.Articles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.Store.SyncArticles(ctx, articles); err != nil {
+		return nil, err
+	}
+	return articles, nil
 }
 
 func (a *App) downloadArticle(ctx context.Context, b *bot.Bot, number int64) error {
@@ -175,7 +181,7 @@ func (a *App) previewArticle(ctx context.Context, b *bot.Bot, number int64) erro
 		return a.articles(ctx, b, number, "", false)
 	}
 	d := articles[i].Draft
-	if saved, err := a.Store.GetArticle(ctx, number); err == nil {
+	if saved, err := a.Store.GetArticle(ctx, number); err == nil && post.SameArticleIdentity(saved, d) {
 		d.Images = saved.Images
 	}
 	d.Categories, d.AvailableTags = []string{d.Category}, d.Tags
@@ -248,16 +254,6 @@ func (a *App) editArticle(ctx context.Context, b *bot.Bot, number int64) error {
 	if a.Repository == nil {
 		return a.replyHTML(ctx, b, "<b>Live articles</b>\nRepository publishing is not configured.")
 	}
-	d, err := a.Store.GetArticle(ctx, number)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if d.Revision != nil {
-		if err := a.Store.SetSetting(ctx, "active", d.ID); err != nil {
-			return err
-		}
-		return a.render(ctx, b, &d)
-	}
 	articles, err := a.liveArticles(ctx)
 	if err != nil {
 		return err
@@ -266,7 +262,7 @@ func (a *App) editArticle(ctx context.Context, b *bot.Bot, number int64) error {
 		if article.Number != number {
 			continue
 		}
-		d, err = a.Store.StartRevision(ctx, article)
+		d, err := a.Store.StartRevision(ctx, article)
 		if err != nil {
 			if d.ID != 0 {
 				return a.notice(ctx, b, &d, err.Error())

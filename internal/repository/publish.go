@@ -281,6 +281,15 @@ func (r *Repository) recoverRemote(ctx context.Context, job *store.Publication) 
 		return false, errors.New("publication commit has an unexpected note set")
 	}
 	name := names[0]
+	// A successful historical push is not a current publication after an
+	// external deletion/revert, even if another article reuses the same path.
+	removed, err := r.git(ctx, "log", "--format=%H", "--no-renames", "--diff-filter=D", "-1", sha+"..origin/main", "--", name)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(removed) != "" {
+		return false, fmt.Errorf("%w: publication was removed from origin/main", post.ErrArticleChanged)
+	}
 	prefix, _, _ := strings.Cut(filepath.Base(name), "-")
 	number, err := strconv.ParseInt(prefix, 10, 64)
 	if err != nil || number < 1 {

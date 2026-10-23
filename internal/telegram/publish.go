@@ -135,20 +135,12 @@ func (a *App) deliver(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 			return err
 		}
 		message, err := a.writePreview(ctx, b, d.ChannelID, 0, "", nil, a.richMessage(*d, false), false)
-		if errors.Is(err, bot.ErrorBadRequest) {
-			d.DocumentMode = true
-			d.Delivery = "pending"
-			if err := a.Store.Save(ctx, d); err != nil {
-				return err
-			}
-		} else {
-			if err != nil {
-				return a.deliveryError(ctx, b, d, err)
-			}
-			d.ContentMessageID = message.ID
-			d.Delivery = "sent"
-			return a.Store.Save(ctx, d)
+		if err != nil {
+			return a.deliveryError(ctx, b, d, err)
 		}
+		d.ContentMessageID = message.ID
+		d.Delivery = "sent"
+		return a.Store.Save(ctx, d)
 	}
 	if d.SummaryMessageID == 0 {
 		if err := a.beforeSend(ctx, d); err != nil {
@@ -183,6 +175,7 @@ func (a *App) beforeSend(ctx context.Context, d *post.Draft) error {
 }
 
 func (a *App) deliveryError(ctx context.Context, b *bot.Bot, d *post.Draft, err error) error {
+	a.logError(b, "destination delivery", err)
 	if errors.Is(err, bot.ErrorBadRequest) || errors.Is(err, bot.ErrorForbidden) || errors.Is(err, bot.ErrorUnauthorized) || errors.Is(err, bot.ErrorNotFound) || bot.IsTooManyRequestsError(err) {
 		d.Delivery = "pending"
 		if saveErr := a.Store.Save(ctx, d); saveErr != nil {

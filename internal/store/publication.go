@@ -16,7 +16,7 @@ import (
 type Publication struct {
 	Operation      string
 	Draft          post.Draft
-	State          string // queued, failed, pushed, done
+	State          string // queued, failed, pushed, done, retired
 	CommitSHA      string
 	Number         int64
 	Filename, Slug string
@@ -159,7 +159,14 @@ func (s *Store) SavePublication(ctx context.Context, job *Publication) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "UPDATE publications SET state=?,data=? WHERE operation=?", job.State, string(data), job.Operation)
+	result, err := s.db.ExecContext(ctx, "UPDATE publications SET state=?,data=? WHERE operation=? AND state<>'retired'", job.State, string(data), job.Operation)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count != 1 {
+		return ErrPublicationLocked
+	}
 	return err
 }
 
@@ -249,6 +256,11 @@ func (s *Store) FinishPublication(ctx context.Context, job *Publication) (post.D
 	d.UpdatedAt = time.Now().UTC()
 	data, err := json.Marshal(d)
 	if err != nil {
+		return d, err
+	}
+	// Git has assigned this number. A reverted/deleted publication in the local
+	// history must not veto it or lend its channel IDs to the replacement.
+	if err := retireArticle(ctx, tx, d.Number, d.ID); err != nil {
 		return d, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE drafts SET number=?,data=? WHERE id=?", d.Number, string(data), d.ID); err != nil {

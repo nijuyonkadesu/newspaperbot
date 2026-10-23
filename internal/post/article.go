@@ -65,6 +65,13 @@ func SameArticle(a, b Draft) bool {
 		a.Category == b.Category && slices.Equal(a.Tags, b.Tags)
 }
 
+// Article numbers can be reused on origin. Match the file identity before
+// carrying local edits or Telegram delivery references into a live article.
+func SameArticleIdentity(a, b Draft) bool {
+	return a.Number == b.Number && a.Filename == b.Filename && a.Slug == b.Slug &&
+		a.PublishedAt.UTC().Format("2006-01-02") == b.PublishedAt.UTC().Format("2006-01-02")
+}
+
 // Existing metadata is retained; only author-editable fields are replaced.
 func (d Draft) articleMarkdown() ([]byte, error) {
 	if d.Revision != nil {

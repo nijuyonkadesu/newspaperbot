@@ -81,7 +81,6 @@ func (a *App) finishRevision(ctx context.Context, b *bot.Bot, d *post.Draft) err
 				document := d.DocumentMode || utf8.RuneCountInString(d.RichMarkdown()) > 32768
 				if !document {
 					_, err = a.writePreview(ctx, b, d.ChannelID, id, "", nil, a.richMessage(*d, false), false)
-					document = errors.Is(err, bot.ErrorBadRequest) && !missingCard(err) && !unchangedMessage(err)
 				}
 				if document {
 					data, encodeErr := d.Markdown()

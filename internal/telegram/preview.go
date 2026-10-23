@@ -28,17 +28,23 @@ func (a *App) writeText(ctx context.Context, b *bot.Bot, id int, text string, ma
 func (a *App) writeMessage(ctx context.Context, b *bot.Bot, chatID int64, id int, text string, markup *models.InlineKeyboardMarkup, rich *models.InputRichMessage) (*models.Message, error) {
 	disabled := true
 	options := &models.LinkPreviewOptions{IsDisabled: &disabled}
+	// A typed nil in ReplyMarkup's interface serializes as JSON null, which
+	// Telegram rejects. Leave absent keyboards out of send and edit requests.
+	var replyMarkup models.ReplyMarkup
+	if markup != nil {
+		replyMarkup = markup
+	}
 	if id != 0 {
-		params := &bot.EditMessageTextParams{ChatID: chatID, MessageID: id, Text: text, ParseMode: models.ParseModeHTML, ReplyMarkup: markup, LinkPreviewOptions: options}
+		params := &bot.EditMessageTextParams{ChatID: chatID, MessageID: id, Text: text, ParseMode: models.ParseModeHTML, ReplyMarkup: replyMarkup, LinkPreviewOptions: options}
 		if rich != nil {
 			params.Text, params.ParseMode, params.RichMessage = "", "", rich
 		}
 		return b.EditMessageText(ctx, params)
 	}
 	if rich != nil {
-		return b.SendRichMessage(ctx, &bot.SendRichMessageParams{ChatID: chatID, RichMessage: *rich, ReplyMarkup: markup, DisableNotification: chatID == a.OwnerID})
+		return b.SendRichMessage(ctx, &bot.SendRichMessageParams{ChatID: chatID, RichMessage: *rich, ReplyMarkup: replyMarkup, DisableNotification: chatID == a.OwnerID})
 	}
-	return b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML, ReplyMarkup: markup, DisableNotification: true, LinkPreviewOptions: options})
+	return b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML, ReplyMarkup: replyMarkup, DisableNotification: true, LinkPreviewOptions: options})
 }
 
 func (a *App) writePreview(ctx context.Context, b *bot.Bot, chatID int64, id int, text string, markup *models.InlineKeyboardMarkup, rich *models.InputRichMessage, footer bool) (*models.Message, error) {

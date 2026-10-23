@@ -162,6 +162,12 @@ func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
 	reject := func(code int, description string) {
 		json.NewEncoder(w).Encode(map[string]any{"ok": false, "error_code": code, "description": description})
 	}
+	// The Bot API rejects a JSON null reply_markup; absent keyboards must be
+	// omitted. In Go, a typed nil inside ReplyMarkup still serializes to null.
+	if r.FormValue("reply_markup") == "null" {
+		reject(400, "Bad Request: object expected as reply markup")
+		return
+	}
 	// Telegram's InputRichMessageMedia IDs are 1-64 ASCII characters. Enforce
 	// the API contract independently of the production ID-generation code.
 	for _, raw := range call.RichMedia {
@@ -569,8 +575,7 @@ func TestUncertainDeliveryNeedsExplicitRetry(t *testing.T) {
 func TestDocumentFallbackResumesAfterConfirmedSummary(t *testing.T) {
 	h := newHarness(t)
 	h.send("/setchannel @first")
-	h.ready("Body")
-	h.api.fail("sendRichMessage", 400)
+	h.ready(strings.Repeat("body\n", 7000))
 	h.api.fail("sendDocument", 403)
 	h.send("/publish")
 	d := h.active()
@@ -579,7 +584,7 @@ func TestDocumentFallbackResumesAfterConfirmedSummary(t *testing.T) {
 	}
 	h.api.fail("sendDocument", 0)
 	h.send("/publish")
-	if h.active().Delivery != "sent" || h.api.count("sendMessage", true) != 1 || h.api.count("sendRichMessage", true) != 1 || h.api.count("sendDocument", true) != 2 {
+	if h.active().Delivery != "sent" || h.api.count("sendMessage", true) != 1 || h.api.count("sendRichMessage", true) != 0 || h.api.count("sendDocument", true) != 2 {
 		t.Fatal("retry duplicated a confirmed part or failed to finish")
 	}
 }

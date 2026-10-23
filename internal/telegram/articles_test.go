@@ -191,6 +191,39 @@ func TestRevisionChannelUpdatesUseOriginalDestinationAndResumeParts(t *testing.T
 	}
 }
 
+func TestRejectedRichChannelEditKeepsMessageAndCanRetry(t *testing.T) {
+	h := newHarness(t)
+	article := exampleArticle(t, 268, time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC))
+	repo := &fakeRepository{entries: []post.Article{article}}
+	h.app.Repository = repo
+	h.send("/edit 268")
+	d := h.active()
+	d.ChannelID, d.ContentMessageID, d.Delivery = -1001, 500, "sent"
+	if err := h.app.Store.Save(context.Background(), &d); err != nil {
+		t.Fatal(err)
+	}
+	h.api.mu.Lock()
+	h.api.messages[500] = apiCall{ChatID: -1001, ResultID: 500, RichMarkdown: "# Original\n\nSummary\n\nBody"}
+	h.api.mu.Unlock()
+	h.replyTo(d.CardID, "Changed body")
+	h.api.fail("editMessageText", 400)
+	h.click("save")
+	h.finishGit()
+	d = h.active()
+	if d.Revision == nil || !d.Revision.Applied || d.DocumentMode || d.ContentMessageID != 500 || !strings.Contains(d.Notice, "channel update pending") {
+		t.Fatal("rejected rich edit was not preserved for retry")
+	}
+	if h.api.count("editMessageMedia", true) != 0 || h.api.count("sendDocument", true) != 0 || h.api.messages[500].RichMarkdown != "# Original\n\nSummary\n\nBody" {
+		t.Fatal("rejected rich edit replaced the original message with an attachment")
+	}
+	h.api.fail("editMessageText", 0)
+	h.click("save")
+	d = h.active()
+	if d.Revision != nil || d.DocumentMode || d.ContentMessageID != 500 || !strings.Contains(h.api.messages[500].RichMarkdown, "Changed body") || repo.calls != 1 {
+		t.Fatal("retry did not update the original rich message independently of Git")
+	}
+}
+
 func TestRevisionMissingChannelMessageDoesNotBlockGit(t *testing.T) {
 	h := newHarness(t)
 	article := exampleArticle(t, 268, time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC))

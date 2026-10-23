@@ -104,6 +104,9 @@ func decode(row *sql.Row) (post.Draft, error) {
 	if err := json.Unmarshal(data, &d); err != nil {
 		return d, err
 	}
+	if d.Archived {
+		return post.Draft{}, sql.ErrNoRows
+	}
 	d.ID = id
 	d.Slot = slot.Int64
 	d.Normalize()
@@ -172,6 +175,9 @@ func (s *Store) list(ctx context.Context, selection string) ([]post.Draft, error
 		}
 		if err := json.Unmarshal(data, &d); err != nil {
 			return nil, err
+		}
+		if d.Archived {
+			continue
 		}
 		d.ID = id
 		d.Slot = slot.Int64

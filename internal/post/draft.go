@@ -77,6 +77,7 @@ type Draft struct {
 	LastMessageID    int
 	UpdatedAt        time.Time
 	Number           int64
+	Archived         bool `json:",omitempty"` // Historical association retired after origin removes or replaces the article.
 	PublishedAt      time.Time
 	Filename         string
 	Exported         bool
