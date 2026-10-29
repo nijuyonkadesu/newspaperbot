@@ -31,6 +31,7 @@ func main() {
 			}
 		}
 		log.Print(message)
+		reportStartup(err)
 		os.Exit(1)
 	}
 }
@@ -53,19 +54,32 @@ func run() error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
+	hashtags, configured := os.LookupEnv("PUBLISH_HASHTAGS")
+	if !configured {
+		hashtags = "#useful"
+	}
 	app := &telegram.App{OwnerID: owner, Store: db, OutputDir: dir, WriteFile: post.WriteFile, Previews: linkpreview.New(nil), Metadata: metadata.Loader{
 		NumberSource:     env("BLOG_NUMBER_SOURCE", "testdata/blog-number.json"),
 		CategoriesSource: env("CATEGORIES_SOURCE", "testdata/categories.json"),
 		TagsSource:       env("TAGS_SOURCE", "testdata/tags.json"),
 	}}
+	app.PublishHashtags = hashtags
+	app.AlertPath = alertPath
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	app.PreviewContext = ctx
 	defer app.ClosePreviews()
-	b, err := bot.New(token, bot.WithServerURL(strings.TrimRight(env("BOT_API_URL", "https://api.telegram.org"), "/")),
+	var b *bot.Bot
+	b, err = bot.New(token, bot.WithServerURL(strings.TrimRight(env("BOT_API_URL", "https://api.telegram.org"), "/")),
 		bot.WithDefaultHandler(app.Handle), bot.WithNotAsyncHandlers(), bot.WithWorkers(1),
 		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateEditedMessage, models.AllowedUpdateCallbackQuery}),
-		bot.WithErrorsHandler(func(err error) { log.Print(strings.ReplaceAll(err.Error(), token, "[redacted]")) }))
+		bot.WithErrorsHandler(func(err error) {
+			if b != nil && strings.HasPrefix(err.Error(), "error get updates") {
+				app.ReportError(ctx, b, "Telegram updates", err)
+			} else {
+				log.Print(strings.ReplaceAll(err.Error(), token, "[redacted]"))
+			}
+		}))
 	if err != nil {
 		return err
 	}
@@ -89,15 +103,11 @@ func run() error {
 		log.Printf("portfolio connected: %d categories, %d tags, next note %d", len(catalog.Categories), len(catalog.Tags), catalog.LastNumber+1)
 	}
 	menuCtx, cancelMenu := context.WithTimeout(ctx, 15*time.Second)
-	if err := app.RegisterMenu(menuCtx, b); err != nil {
-		// The owner may not have opened the DM yet. /start retries registration.
-		log.Printf("command menu: %s", strings.ReplaceAll(err.Error(), token, "[redacted]"))
-	}
+	// The owner may not have opened the DM yet. /start retries registration.
+	app.ReportError(ctx, b, "Command menu", app.RegisterMenu(menuCtx, b))
 	cancelMenu()
 	cardCtx, cancelCard := context.WithTimeout(ctx, 15*time.Second)
-	if err := app.RestoreCard(cardCtx, b); err != nil {
-		log.Printf("restore draft card: %s", strings.ReplaceAll(err.Error(), token, "[redacted]"))
-	}
+	app.ReportError(ctx, b, "Restore draft cards", app.RestoreCard(cardCtx, b))
 	cancelCard()
 	onlineCtx, cancelOnline := context.WithTimeout(ctx, 15*time.Second)
 	_, err = b.SendMessage(onlineCtx, &bot.SendMessageParams{ChatID: owner, Text: "I'm online."})
@@ -105,6 +115,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("send startup notification: %w", err)
 	}
+	app.ReportError(ctx, b, "Startup failed", nil)
 	log.Print("blog bot started; authoring restricted to the owner's private chat")
 	syncDone := make(chan struct{})
 	go func() { defer close(syncDone); app.RunTaxonomySync(ctx, b) }()

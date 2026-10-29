@@ -73,14 +73,16 @@ func (a *App) finishRevision(ctx context.Context, b *bot.Bot, d *post.Draft) err
 			a.cancelPreview(previewTarget{d.ChannelID, id})
 			var err error
 			if summary {
-				_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: d.ChannelID, MessageID: id, Text: d.Title + "\n\n" + d.Summary})
+				text, rich := a.publicationSummary(*d)
+				_, err = b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: d.ChannelID, MessageID: id, Text: text})
 				if err == nil || unchangedMessage(err) {
-					a.queuePreview(ctx, b, previewTarget{d.ChannelID, id}, nil, models.InputRichMessage{Markdown: "# " + d.Title + "\n\n" + d.Summary}, d.RichMarkdown(), false)
+					a.queuePreview(ctx, b, previewTarget{d.ChannelID, id}, nil, rich, d.RichMarkdown(), false)
 				}
 			} else {
-				document := d.DocumentMode || utf8.RuneCountInString(d.RichMarkdown()) > 32768
+				rich := a.publicationRich(*d)
+				document := d.DocumentMode || utf8.RuneCountInString(rich.Markdown) > 32768
 				if !document {
-					_, err = a.writePreview(ctx, b, d.ChannelID, id, "", nil, a.richMessage(*d, false), false)
+					_, err = a.writePreview(ctx, b, d.ChannelID, id, "", nil, rich, false)
 				}
 				if document {
 					data, encodeErr := d.Markdown()

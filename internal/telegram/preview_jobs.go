@@ -91,7 +91,7 @@ func (a *App) queuePreview(ctx context.Context, b *bot.Bot, target previewTarget
 			return
 		}
 		if _, err := a.writeLinkCard(workCtx, b, target, markup, &rich, card, footer); err != nil && workCtx.Err() == nil && !unchangedMessage(err) {
-			a.logError(b, "URL preview edit", err)
+			a.ReportError(workCtx, b, "URL preview update", err)
 		}
 	}()
 }

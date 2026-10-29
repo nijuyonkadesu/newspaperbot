@@ -118,6 +118,7 @@ func TestPublishedURLCardEditsDestinationWithoutTouchingMarkdown(t *testing.T) {
 		t.Run(destination, func(t *testing.T) {
 			server, photo, _ := previewWebsite(t, true)
 			h := newHarness(t)
+			h.app.PublishHashtags = "#useful"
 			h.app.Previews = linkpreview.New(server.Client())
 			h.send("/setchannel " + destination)
 			h.ready("[site](" + server.URL + ")\n\n---\n\n### Closing section\nKeep this after the divider.")
@@ -139,7 +140,7 @@ func TestPublishedURLCardEditsDestinationWithoutTouchingMarkdown(t *testing.T) {
 				}
 			}
 			if d.Delivery != "sent" || sends != 1 || edits != 1 || final.MessageID != d.ContentMessageID ||
-				!strings.HasPrefix(final.RichMarkdown, d.RichMarkdown()+"\n\n---\n\n") || !strings.Contains(final.RichMarkdown, "**[Remote title]") || !bytes.Equal(final.RichImage, photo) {
+				!strings.HasPrefix(final.RichMarkdown, d.RichMarkdown()+"\n\n\\#useful\n\n---\n\n") || !strings.Contains(final.RichMarkdown, "**[Remote title]") || !bytes.Equal(final.RichImage, photo) {
 				t.Fatal("destination did not use the shared URL card or misplaced article content", final.RichMarkdown)
 			}
 			expected, err := d.Markdown()
@@ -278,6 +279,7 @@ func TestSwitchCancelsAnInFlightEnrichmentEdit(t *testing.T) {
 func TestSavingLiveArticleEnrichesSameChannelMessage(t *testing.T) {
 	server, _, _ := previewWebsite(t, false)
 	h := newHarness(t)
+	h.app.PublishHashtags = "#useful"
 	h.app.Previews = linkpreview.New(server.Client())
 	article := exampleArticle(t, 268, time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC))
 	h.app.Repository = &fakeRepository{entries: []post.Article{article}}
@@ -298,7 +300,7 @@ func TestSavingLiveArticleEnrichesSameChannelMessage(t *testing.T) {
 	h.api.mu.Lock()
 	updated := h.api.messages[500]
 	h.api.mu.Unlock()
-	if d.Revision != nil || d.Number != 268 || d.PublishedAt.Format("2006-01-02") != "2020-01-02" || !strings.Contains(updated.RichMarkdown, "**[Remote title]") ||
+	if d.Revision != nil || d.Number != 268 || d.PublishedAt.Format("2006-01-02") != "2020-01-02" || !strings.Contains(updated.RichMarkdown, "**[Remote title]") || !strings.Contains(updated.RichMarkdown, "\n\n\\#useful\n\n---\n\n") ||
 		h.api.count("sendRichMessage", true) != 0 {
 		t.Fatal("saving lost the URL card, recreated the channel message, or changed article identity")
 	}

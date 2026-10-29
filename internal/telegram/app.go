@@ -23,19 +23,23 @@ import (
 )
 
 type App struct {
-	mu             sync.Mutex
-	taxonomyMu     sync.Mutex
-	previewJobs    map[previewTarget]*previewJob
-	previewWG      sync.WaitGroup
-	ownerPreview   atomic.Pointer[previewJob]
-	OwnerID        int64
-	Store          *store.Store
-	Metadata       metadata.Loader
-	OutputDir      string
-	WriteFile      func(string, []byte) error
-	Repository     Repository
-	Previews       *linkpreview.Client
-	PreviewContext context.Context
+	mu              sync.Mutex
+	taxonomyMu      sync.Mutex
+	alertMu         sync.Mutex
+	alerts          map[string]errorAlert
+	previewJobs     map[previewTarget]*previewJob
+	previewWG       sync.WaitGroup
+	ownerPreview    atomic.Pointer[previewJob]
+	OwnerID         int64
+	PublishHashtags string
+	AlertPath       string
+	Store           *store.Store
+	Metadata        metadata.Loader
+	OutputDir       string
+	WriteFile       func(string, []byte) error
+	Repository      Repository
+	Previews        *linkpreview.Client
+	PreviewContext  context.Context
 }
 
 type Repository interface {
@@ -66,11 +70,12 @@ Edit your source message; new messages append. One card updates in place.
 /taxonomy — copy categories and grouped tags; pin the list
 Optional footer: Category: name, then Tags: tag1, tag2 (or -).
 
-/drafts · /resume <draft number> — list / resume drafts
+/drafts — browse, preview, and edit drafts
+/resume <draft number> — open draft here
 /posts — browse published articles; reply with a number to jump
 /edit <article number> — edit / resume article
 /save — save edits; keep article number, date, and URL
-/replace — replace entire post
+/replace — replace selected draft/article content
 /undo — remove last addition; keep chat message
 /remove · /remove <message ID> — remove addition by reply / ID
 /download [article number] — download selected post / published article
@@ -136,14 +141,11 @@ func (a *App) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 		return
 	}
 	if err != nil {
-		a.logError(b, "update", err)
 		d, loadErr := a.errorDraft(ctx, update)
 		if loadErr == nil {
-			if notifyErr := a.notice(ctx, b, &d, "Could not finish this action. Saved content is retained; try again."); notifyErr != nil {
-				a.logError(b, "draft card", notifyErr)
-			}
-		} else if replyErr := a.reply(ctx, b, "Could not finish this action. Try again; saved drafts are retained.", nil); replyErr != nil {
-			a.logError(b, "error reply", replyErr)
+			a.reportDraftError(ctx, b, &d, "Action failed", err)
+		} else {
+			a.ReportError(ctx, b, "Action failed", err)
 		}
 	}
 }
@@ -190,7 +192,7 @@ func (a *App) errorDraft(ctx context.Context, update *models.Update) (post.Draft
 }
 
 func (a *App) logError(b *bot.Bot, label string, err error) {
-	log.Printf("%s: %s", label, strings.ReplaceAll(err.Error(), b.Token(), "[redacted]"))
+	log.Printf("%s: %s", label, errorMessage(b, err))
 }
 
 func (a *App) allowed(m *models.Message) bool {
@@ -212,6 +214,9 @@ func (a *App) replyHTML(ctx context.Context, b *bot.Bot, text string) error {
 }
 
 func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, updateID int64) error {
+	if handled, err := a.listNumberReply(ctx, b, m, "drafts", "draft", a.drafts); handled {
+		return err
+	}
 	if handled, err := a.articleListReply(ctx, b, m); handled {
 		return err
 	}
@@ -221,9 +226,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 		switch command {
 		case "/start", "/help":
 			if command == "/start" {
-				if err := a.RegisterMenu(ctx, b); err != nil {
-					a.logError(b, "command menu", err)
-				}
+				a.ReportError(ctx, b, "Command menu", a.RegisterMenu(ctx, b))
 			}
 			return a.reply(ctx, b, help, nil)
 		case "/taxonomy":
@@ -383,14 +386,7 @@ func (a *App) message(ctx context.Context, b *bot.Bot, m *models.Message, update
 			if err != nil {
 				return err
 			}
-			if err := a.Store.SetSetting(ctx, "active", d.ID); err != nil {
-				return err
-			}
-			d.ResetView()
-			if err := a.Store.Save(ctx, &d); err != nil {
-				return err
-			}
-			return a.render(ctx, b, &d)
+			return a.openDraft(ctx, b, d.ID)
 		case "/setchannel":
 			if len(fields) != 2 {
 				return a.reply(ctx, b, "Use /setchannel @name or /setchannel -1001234567890. Add the bot as an administrator first.", nil)
@@ -647,6 +643,9 @@ func (a *App) target(ctx context.Context, b *bot.Bot, m *models.Message) (post.D
 }
 
 func (a *App) callback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) error {
+	if handled, err := a.draftListCallback(ctx, b, q); handled {
+		return err
+	}
 	if handled, err := a.articleCallback(ctx, b, q); handled {
 		return err
 	}
@@ -706,6 +705,8 @@ func (a *App) action(ctx context.Context, b *bot.Bot, d *post.Draft, action stri
 		return a.discardChanges(ctx, b, d, true)
 	case "edit":
 		return a.editArticle(ctx, b, d.Number)
+	case "drafts":
+		return a.list(ctx, b)
 	case "save":
 		return a.saveChanges(ctx, b, d)
 	case "publish":
@@ -869,22 +870,7 @@ func (a *App) deleteOwnerMessage(ctx context.Context, b *bot.Bot, messageID int,
 }
 
 func (a *App) list(ctx context.Context, b *bot.Bot) error {
-	drafts, err := a.Store.List(ctx)
-	if err != nil {
-		return err
-	}
-	lines := []string{"Saved drafts · /resume <number>"}
-	for _, d := range drafts {
-		title := clip(d.Title, 55)
-		if title == "" {
-			title = "Untitled"
-		}
-		lines = append(lines, fmt.Sprintf("%d · %s", d.Slot, title))
-	}
-	if len(drafts) == 0 {
-		lines = []string{"No drafts yet. Use /newpost."}
-	}
-	return a.reply(ctx, b, strings.Join(lines, "\n"), nil)
+	return a.drafts(ctx, b, 0, "", true)
 }
 
 func (a *App) channels(ctx context.Context, b *bot.Bot) error {

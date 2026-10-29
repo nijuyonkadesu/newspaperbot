@@ -56,6 +56,9 @@ func draftKeyboard(d post.Draft, preview bool) *models.InlineKeyboardMarkup {
 	}
 	markup := keyboard(d, saveLabel, saveAction, label, action, "Options", "options")
 	addRow(markup, d, "Category", "categories-0", "Tags", "tags-0")
+	if d.Number == 0 {
+		addRow(markup, d, "Replace draft", "replace", "Drafts", "drafts")
+	}
 	if d.Revision != nil {
 		addRow(markup, d, "Discard changes", "cancel")
 	}
@@ -223,8 +226,8 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 			d.Slot, html.EscapeString(clip(source, 1100)), html.EscapeString(clip(d.CategoryLabel(), 40)), html.EscapeString(clip(tags, 80)))
 		markup = keyboard(d, "Cancel draft", "cancel")
 		if d.View == "replace" {
-			text += "\nYour current post stays saved until a valid replacement arrives."
-			markup = keyboard(d, "Keep current post", "back", "Cancel draft", "cancel")
+			text += "\nYour draft stays saved until a valid replacement arrives."
+			markup = keyboard(d, "Keep current draft", "back", "Cancel draft", "cancel")
 		}
 		if d.Revision != nil {
 			text = "<b>Editing live</b> · " + articleIdentity(d) + "\n\nSend replacement title, summary, and Markdown body in <b>one message</b>.\n\n<pre>" + html.EscapeString(clip(source, 1100)) + "</pre>"
@@ -241,7 +244,11 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 	case d.View == "options":
 		text += "\n\n<b>Options</b>"
 		markup = keyboard(d, "Category", "categories-0", "Tags", "tags-0")
-		addRow(markup, d, "Replace post", "replace", "Download", "download")
+		replaceLabel := "Replace draft"
+		if d.Revision != nil {
+			replaceLabel = "Replace article"
+		}
+		addRow(markup, d, replaceLabel, "replace", "Download", "download")
 		if len(d.Sources) > 0 && !d.Sources[len(d.Sources)-1].Full {
 			addRow(markup, d, "Remove last addition", "undo")
 		}
@@ -306,7 +313,11 @@ func card(d post.Draft) (string, *models.InlineKeyboardMarkup) {
 	if d.Invalid != "" {
 		text += "\n\n<b>" + html.EscapeString(clip(d.Invalid, 350)) + "</b>"
 		if d.View == "" || d.View == "preview" {
-			markup = keyboard(d, "Replace post", "replace", "Options", "options")
+			replaceLabel := "Replace draft"
+			if d.Revision != nil {
+				replaceLabel = "Replace article"
+			}
+			markup = keyboard(d, replaceLabel, "replace", "Options", "options")
 			addRow(markup, d, "Category", "categories-0", "Tags", "tags-0")
 		}
 	}

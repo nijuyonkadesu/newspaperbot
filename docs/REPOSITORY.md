@@ -99,6 +99,16 @@ explicit retry. Startup does not automatically resend those uncertain messages.
 Old local-file publications retain their original recovery path and are never
 silently moved into the portfolio repository.
 
+Failures update the affected post card with their cause. If SQLite or card edits
+fail, the owner receives a DM instead. Background and startup alerts reuse their
+message across retries and restarts; delivery receipts are stored independently
+of SQLite in `.run/owner-alerts.json`. Configured tokens are redacted.
+
+Published channel/group messages include `#useful` by default, independently of
+article tags. Set `PUBLISH_HASHTAGS="#useful #notes"` in `.env` to customize, or
+`PUBLISH_HASHTAGS=""` to disable, then restart. This also applies when saving
+article edits; Git files, downloads and DM previews never receive this footer.
+
 ## Local development
 
 Leave both `PORTFOLIO_GIT_TOKEN` and `PORTFOLIO_REPO_URL` unset to use the original

@@ -155,13 +155,9 @@ func (a *App) RunTaxonomySync(ctx context.Context, b *bot.Bot) {
 		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		if a.Repository != nil {
-			if err := a.Repository.Refresh(checkCtx); err != nil && ctx.Err() == nil {
-				a.logError(b, "repository refresh", err)
-			}
+			a.ReportError(ctx, b, "Repository refresh", a.Repository.Refresh(checkCtx))
 		}
-		if err := a.SyncTaxonomy(checkCtx, b, false); err != nil && ctx.Err() == nil {
-			a.logError(b, "taxonomy refresh", err)
-		}
+		a.ReportError(ctx, b, "Taxonomy refresh", a.SyncTaxonomy(checkCtx, b, false))
 	}
 	sync()
 	ticker := time.NewTicker(30 * time.Second)

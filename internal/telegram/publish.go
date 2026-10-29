@@ -127,14 +127,15 @@ func (a *App) publish(ctx context.Context, b *bot.Bot, d *post.Draft, retry bool
 // Each send is marked uncertain before the network call. A crash, timeout, or
 // failed DB write then requires an explicit retry after checking the channel.
 func (a *App) deliver(ctx context.Context, b *bot.Bot, d *post.Draft) error {
-	if utf8.RuneCountInString(d.RichMarkdown()) > 32768 {
+	rich := a.publicationRich(*d)
+	if utf8.RuneCountInString(rich.Markdown) > 32768 {
 		d.DocumentMode = true
 	}
 	if !d.DocumentMode {
 		if err := a.beforeSend(ctx, d); err != nil {
 			return err
 		}
-		message, err := a.writePreview(ctx, b, d.ChannelID, 0, "", nil, a.richMessage(*d, false), false)
+		message, err := a.writePreview(ctx, b, d.ChannelID, 0, "", nil, rich, false)
 		if err != nil {
 			return a.deliveryError(ctx, b, d, err)
 		}
@@ -146,12 +147,13 @@ func (a *App) deliver(ctx context.Context, b *bot.Bot, d *post.Draft) error {
 		if err := a.beforeSend(ctx, d); err != nil {
 			return err
 		}
-		message, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: d.ChannelID, Text: d.Title + "\n\n" + d.Summary})
+		text, summary := a.publicationSummary(*d)
+		message, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: d.ChannelID, Text: text})
 		if err != nil {
 			return a.deliveryError(ctx, b, d, err)
 		}
 		d.SummaryMessageID = message.ID
-		a.queuePreview(ctx, b, previewTarget{d.ChannelID, message.ID}, nil, models.InputRichMessage{Markdown: "# " + d.Title + "\n\n" + d.Summary}, d.RichMarkdown(), false)
+		a.queuePreview(ctx, b, previewTarget{d.ChannelID, message.ID}, nil, summary, d.RichMarkdown(), false)
 		d.Delivery = "pending"
 		if err := a.Store.Save(ctx, d); err != nil {
 			return err

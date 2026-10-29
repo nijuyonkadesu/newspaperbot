@@ -52,9 +52,7 @@ func (a *App) RunPublisher(ctx context.Context, b *bot.Bot) {
 	for {
 		a.flushMediaRequests(ctx, b)
 		jobs, err := a.Store.PendingPublications(ctx)
-		if err != nil && ctx.Err() == nil {
-			a.logError(b, "publication queue", err)
-		}
+		a.ReportError(ctx, b, "Publication queue", err)
 		for i := range jobs {
 			if ctx.Err() != nil {
 				return
@@ -93,37 +91,37 @@ func (a *App) runPublication(ctx context.Context, b *bot.Bot, job *store.Publica
 			d, saveErr = a.Store.FailPublication(uiCtx, job)
 		}
 		if saveErr != nil {
-			a.logError(b, "publication checkpoint", saveErr)
+			a.reportDraftError(uiCtx, b, &job.Draft, "Publication checkpoint failed", saveErr)
 			return
 		}
-		if renderErr := a.render(uiCtx, b, &d); renderErr != nil {
-			a.logError(b, "publication card", renderErr)
+		if !job.Conflict && (imageErr == nil || job.CommitSHA != "") {
+			a.reportDraftError(uiCtx, b, &d, "Publishing paused", err)
+		} else if renderErr := a.render(uiCtx, b, &d); renderErr != nil {
+			a.ReportError(uiCtx, b, "Publication card failed", renderErr)
 		}
 		return
 	}
 	d, err := a.Store.FinishPublication(uiCtx, job)
 	if err != nil {
-		a.logError(b, "publication completion", err)
+		a.reportDraftError(uiCtx, b, &job.Draft, "Publication checkpoint failed", err)
 		return
 	}
+	a.ReportError(uiCtx, b, "Publication checkpoint failed", nil)
 	if err := a.publish(uiCtx, b, &d, false); err != nil {
-		a.logError(b, "publication destination", err)
-		status := "Committed to main. Continue publishing to finish destination delivery."
+		status := "Committed to main · destination pending"
 		if d.Revision != nil {
 			status = "Repository updated · channel update pending"
 		}
-		_ = a.notice(uiCtx, b, &d, status)
+		a.reportDraftError(uiCtx, b, &d, status, err)
 	} else if err := a.applyLateMedia(uiCtx, b, &d); err != nil {
-		a.logError(b, "late album", err)
+		a.reportDraftError(uiCtx, b, &d, "Album update failed", err)
 	}
 }
 
 func (a *App) flushMediaRequests(ctx context.Context, b *bot.Bot) {
 	drafts, err := a.Store.MediaPending(ctx)
+	a.ReportError(ctx, b, "Pending media", err)
 	if err != nil {
-		if ctx.Err() == nil {
-			a.logError(b, "media pending", err)
-		}
 		return
 	}
 	for _, saved := range drafts {
@@ -144,9 +142,9 @@ func (a *App) flushMediaRequests(ctx context.Context, b *bot.Bot) {
 				}
 			}
 		}
-		a.mu.Unlock()
 		if err != nil && !errors.Is(err, sql.ErrNoRows) && ctx.Err() == nil {
-			a.logError(b, "media pending", err)
+			a.reportDraftError(ctx, b, &saved, "Album update failed", err)
 		}
+		a.mu.Unlock()
 	}
 }

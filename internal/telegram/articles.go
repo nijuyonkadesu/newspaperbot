@@ -17,8 +17,6 @@ import (
 	"newspaperbot/internal/post"
 )
 
-const articlesPerPage = 8
-
 func articleAge(d post.Draft) string {
 	if d.PublishedAt.UTC().Format("2006-01-02") == time.Now().UTC().Format("2006-01-02") {
 		return "Today"
@@ -93,7 +91,7 @@ func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice str
 			}
 		}
 	}
-	end := min(start+articlesPerPage, len(articles))
+	end := min(start+listItemsPerPage, len(articles))
 	var text strings.Builder
 	text.WriteString("<b>Live articles</b>")
 	if start < end {
@@ -129,7 +127,7 @@ func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice str
 	}
 	navigation := []models.InlineKeyboardButton{}
 	if start > 0 {
-		previous := max(start-articlesPerPage, 0)
+		previous := max(start-listItemsPerPage, 0)
 		previousAnchor := articles[previous].Number
 		if previous == 0 {
 			previousAnchor = 0
@@ -141,29 +139,8 @@ func (a *App) articles(ctx context.Context, b *bot.Bot, anchor int64, notice str
 		navigation = append(navigation, models.InlineKeyboardButton{Text: "›", CallbackData: fmt.Sprintf("posts:%d", articles[end].Number)})
 	}
 	markup.InlineKeyboard = append(markup.InlineKeyboard, navigation)
-	id, err := a.Store.Setting(ctx, "posts_message")
-	if err != nil {
+	if err := a.writeList(ctx, b, "posts", text.String(), markup, replace); err != nil {
 		return err
-	}
-	if id != 0 && !replace {
-		_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{ChatID: a.OwnerID, MessageID: int(id), Text: text.String(), ParseMode: models.ParseModeHTML, ReplyMarkup: markup})
-		if err == nil || unchangedMessage(err) {
-			return a.Store.SetSetting(ctx, "posts_anchor", anchor)
-		}
-		if !missingCard(err) {
-			return err
-		}
-	}
-	message, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: a.OwnerID, Text: text.String(), ParseMode: models.ParseModeHTML, ReplyMarkup: markup, DisableNotification: true})
-	if err != nil {
-		return err
-	}
-	if err := a.Store.SetSetting(ctx, "posts_message", int64(message.ID)); err != nil {
-		a.deleteCard(ctx, b, message.ID)
-		return err
-	}
-	if id != 0 {
-		a.deleteCard(ctx, b, int(id))
 	}
 	return a.Store.SetSetting(ctx, "posts_anchor", anchor)
 }
@@ -220,34 +197,7 @@ func (a *App) previewArticle(ctx context.Context, b *bot.Bot, number int64) erro
 }
 
 func (a *App) articleListReply(ctx context.Context, b *bot.Bot, m *models.Message) (bool, error) {
-	text := strings.TrimSpace(m.Text)
-	if m.ReplyToMessage == nil || strings.HasPrefix(text, "/") {
-		return false, nil
-	}
-	id, err := a.Store.Setting(ctx, "posts_message")
-	if err != nil {
-		return true, err
-	}
-	if id == 0 || int64(m.ReplyToMessage.ID) != id {
-		return false, nil
-	}
-	if text == "" {
-		return true, nil
-	}
-	anchor, parseErr := strconv.ParseInt(text, 10, 64)
-	notice := ""
-	if parseErr != nil || anchor <= 0 {
-		anchor, err = a.Store.Setting(ctx, "posts_anchor")
-		if err != nil {
-			return true, err
-		}
-		notice = "Reply with a positive article number, e.g. <code>125</code>."
-	}
-	if err := a.articles(ctx, b, anchor, notice, false); err != nil {
-		return true, err
-	}
-	a.deleteOwnerMessage(ctx, b, m.ID, "article list reply")
-	return true, nil
+	return a.listNumberReply(ctx, b, m, "posts", "article", a.articles)
 }
 
 func (a *App) editArticle(ctx context.Context, b *bot.Bot, number int64) error {

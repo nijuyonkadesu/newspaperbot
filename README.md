@@ -85,6 +85,45 @@ When you tap <kbd>Publish</kbd>, the bot:
 2. Commits the post and updated category/tag lists to Git.
 3. Sends the post to your configured channel/group, if any.
 
+Channel/group posts get `#useful` automatically. Your article and DM preview do not.
+
+**Saved draft → edit**
+
+<table>
+<tr><th>You send / tap</th><th>Bot / chat change</th></tr>
+<tr>
+<td><code>/drafts</code></td>
+<td>
+<blockquote>
+<strong>Drafts</strong><br><br>
+<code>#1</code> · <strong>Selected</strong><br>
+<strong>A useful trick</strong><br><br>
+<code>#2</code><br>
+<strong>Another idea</strong>
+</blockquote>
+<kbd>Preview #1</kbd> <kbd>Edit #1</kbd><br>
+<kbd>Preview #2</kbd> <kbd>Edit #2</kbd><br>
+<kbd>Refresh</kbd>
+</td>
+</tr>
+<tr>
+<td><kbd>Preview #1</kbd> → <kbd>Back</kbd></td>
+<td>Read draft #1 → return to the list. Selection stays unchanged.</td>
+</tr>
+<tr>
+<td><kbd>Edit #1</kbd><br>or <code>/resume 1</code></td>
+<td>Brings draft <code>#1</code>'s editor to the bottom of the chat.<br><br>
+<kbd>Publish</kbd> <kbd>Preview</kbd> <kbd>Options</kbd><br>
+<kbd>Category</kbd> <kbd>Tags</kbd><br>
+<kbd>Replace draft</kbd> <kbd>Drafts</kbd><br><br>
+New messages append here. Edit an existing source message to revise it.</td>
+</tr>
+<tr>
+<td><kbd>Replace draft</kbd><br>then send:<pre>A clearer trick&#10;&#10;Revised summary.&#10;&#10;## The idea&#10;Revised body.</pre></td>
+<td>Replaces draft <code>#1</code>'s content. Edit your new message to revise it again; the card updates in place. Its publication date is assigned only when you tap <kbd>Publish</kbd>.</td>
+</tr>
+</table>
+
 **Published article → edit → save**
 
 <table>
@@ -177,10 +216,9 @@ Publish/Save adds new names to the category/tag lists; `*` is never stored.
 | <kbd>Preview #268</kbd> → <kbd>Back</kbd> | Read article → return to list; no edit started. |
 | Post contains `[Guide](https://site.example/guide)` → <kbd>Preview</kbd> | Markdown appears immediately; the URL card fills in when available. Switching posts cancels the pending card. Channel/group posts get the same URL card. Downloads and Git files stay unchanged. |
 | `/newpost` while draft `#1` has text | `#2`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Cancel draft</kbd><br><br>Draft `#1` stays saved; reply to either card to append there. |
-| `/drafts` | **Saved drafts** · `/resume <number>`<br>`1 · A useful trick`<br>`2 · Untitled` |
-| `/resume 1`, including after a restart | Reopens saved draft `#1`.<br>**A useful trick**<br>`#1` · *concept · go*<br><kbd>Publish</kbd> <kbd>Preview</kbd><br><br>Further unthreaded text goes here. |
+| Reply to the `/drafts` output with `2` | List jumps to draft `#2`; your reply disappears. `/drafts` again brings a fresh list to the bottom. |
 | `/edit 269` after a restart | Resumes saved, unfinished edits to article `#269`. Article edits aren't listed in `/drafts`. |
-| `/replace` | `#1`<br>Send title, summary, and Markdown body in **one message**.<br><kbd>Keep current post</kbd> <kbd>Cancel draft</kbd><br><br>Send a valid replacement to update the card. |
+| `/replace` | Opens replacement mode for the selected draft/article. Existing content stays until you send a valid replacement. |
 | `/undo` after appending `One more detail.` | Addition leaves the card; its chat message stays. |
 | Reply to that addition: `/remove` | Addition removed; source and command cleared where allowed. |
 | **Review** → <kbd>Source 1</kbd> → reply `/remove` | Open the failing source, then remove it. Deleted source: `/remove 42`. |
@@ -202,7 +240,7 @@ Downloads include your pending article edits.
 | `/posts` → <kbd>Preview #269</kbd> → <kbd>Edit #269</kbd> → `/download` | Article `#269`'s Markdown file. |
 
 Plain `/download` uses the post selected with `/newpost`, `/resume`, `/edit`,
-or <kbd>Replace post</kbd>. Previewing another post doesn't switch that selection.
+or <kbd>Replace draft</kbd> / <kbd>Replace article</kbd>. Previewing a list item doesn't switch that selection.
 `/download 269` always gets the published version; pending edits need plain `/download` or a reply to their card.
 
 **Taxonomy and destination**
